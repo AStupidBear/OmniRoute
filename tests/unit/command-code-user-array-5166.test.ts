@@ -1,13 +1,9 @@
 /**
  * #5166 (user-content-array 400 on Command Code / deepseek-v4-pro) context.
  *
- * The original regression was that a user message whose `content` was an array of
- * content parts reached the CLI-only /alpha/generate endpoint, which required
- * user content to be a plain string. Since #10265 the executor posts to the
- * documented /provider/v1/chat/completions endpoint, which natively speaks the
- * OpenAI chat.completions format — array content (text + image_url parts) is
- * valid there and passes through unchanged. These tests pin that OpenAI-shaped
- * passthrough.
+ * Command Code's CLI endpoint accepts the same content parts inside its nested
+ * `params.messages` request shape. These tests pin that the executor does not
+ * flatten or discard multipart user content.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -15,9 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const TEST_DATA_DIR = fs.mkdtempSync(
-  path.join(os.tmpdir(), "omniroute-cmd-code-user-array-5166-")
-);
+const TEST_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "omniroute-cmd-code-user-array-5166-"));
 process.env.DATA_DIR = TEST_DATA_DIR;
 
 const { getExecutor } = await import("../../open-sse/executors/index.ts");
@@ -56,7 +50,7 @@ function captureFetch(response: Response) {
   return calls;
 }
 
-test("#5166 user message with multi-part array content passes through as an OpenAI array", async () => {
+test("#5166 user message with multi-part array content passes through unchanged", async () => {
   const calls = captureFetch(okResponse());
   await getExecutor("command-code").execute({
     model: "deepseek/deepseek-v4-pro",
@@ -75,8 +69,8 @@ test("#5166 user message with multi-part array content passes through as an Open
     },
   });
 
-  const userMsg = (calls[0].body.messages as Record<string, unknown>[])[0];
-  // OpenAI array content is valid on /provider/v1 — forwarded as-is.
+  const params = calls[0].body.params as Record<string, unknown>;
+  const userMsg = (params.messages as Record<string, unknown>[])[0];
   assert.ok(Array.isArray(userMsg.content), "array content forwarded (no CLI flattening)");
   const parts = userMsg.content as Record<string, unknown>[];
   assert.equal(parts.length, 2);
@@ -94,7 +88,8 @@ test("#5166 user message with single text-part array passes through", async () =
       messages: [{ role: "user", content: [{ type: "text", text: "Hi there" }] }],
     },
   });
-  const userMsg = (calls[0].body.messages as Record<string, unknown>[])[0];
+  const params = calls[0].body.params as Record<string, unknown>;
+  const userMsg = (params.messages as Record<string, unknown>[])[0];
   const parts = userMsg.content as Record<string, unknown>[];
   assert.equal(parts.length, 1);
   assert.equal(parts[0].text, "Hi there");
@@ -108,7 +103,8 @@ test("#5166 user message with plain string content passes through unchanged", as
     credentials: { apiKey: "cc_test_key" },
     body: { messages: [{ role: "user", content: "Plain string message" }] },
   });
-  const userMsg = (calls[0].body.messages as Record<string, unknown>[])[0];
+  const params = calls[0].body.params as Record<string, unknown>;
+  const userMsg = (params.messages as Record<string, unknown>[])[0];
   assert.equal(userMsg.content, "Plain string message");
 });
 
@@ -130,7 +126,8 @@ test("#5166 user message with mixed parts (text + image_url) keeps all parts", a
       ],
     },
   });
-  const userMsg = (calls[0].body.messages as Record<string, unknown>[])[0];
+  const params = calls[0].body.params as Record<string, unknown>;
+  const userMsg = (params.messages as Record<string, unknown>[])[0];
   const parts = userMsg.content as Record<string, unknown>[];
   assert.equal(parts.length, 2, "text + image both preserved");
   assert.equal(parts[0].text, "Describe this:");

@@ -1,7 +1,13 @@
 // OpenAI/Gemini-format + Bedrock provider key validators (bedrock, openai-like, command-code, gemini-like, openai-compatible).
 // Extracted from validation.ts (god-file decomposition) — top-level functions; behavior is
 // byte-identical to the original inline defs.
+import { randomUUID } from "node:crypto";
 import { getRegistryEntry } from "@omniroute/open-sse/config/providerRegistry.ts";
+import {
+  buildCommandCodeCliBody,
+  buildCommandCodeCliHeaders,
+  normalizeCommandCodeWireModel,
+} from "@omniroute/open-sse/config/providers/registry/command-code/protocol.ts";
 import {
   discoverBedrockNativeModels,
   isBedrockNativeApiError,
@@ -195,27 +201,28 @@ export async function validateOpenAILikeProvider({
 export async function validateCommandCodeProvider({ apiKey, providerSpecificData = {} }: any) {
   const entry = getRegistryEntry("command-code");
   const baseUrl = normalizeBaseUrl(entry?.baseUrl || "https://api.commandcode.ai");
-  const chatPath = entry?.chatPath || "/provider/v1/chat/completions";
+  const chatPath = entry?.chatPath || "/alpha/generate";
   const url = `${baseUrl}${chatPath.startsWith("/") ? chatPath : `/${chatPath}`}`;
   const validationModelId =
     providerSpecificData?.validationModelId ||
     entry?.models?.find((model) => model.id === "deepseek/deepseek-v4-flash")?.id ||
     "deepseek/deepseek-v4-flash";
+  const sessionId = randomUUID();
+  const wireModel = normalizeCommandCodeWireModel(validationModelId);
 
   return validateDirectChatProvider({
     url,
     providerSpecificData,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      Accept: "text/event-stream",
-    },
-    body: {
-      model: validationModelId,
-      messages: [{ role: "user", content: "test" }],
-      stream: true,
-      max_tokens: 1,
-    },
+    headers: buildCommandCodeCliHeaders(apiKey, sessionId),
+    body: buildCommandCodeCliBody(
+      wireModel,
+      {
+        model: wireModel,
+        messages: [{ role: "user", content: "Reply with exactly OK." }],
+        max_tokens: 1,
+      },
+      sessionId
+    ),
   });
 }
 

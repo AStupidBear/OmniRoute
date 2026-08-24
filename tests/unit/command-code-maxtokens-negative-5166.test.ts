@@ -52,25 +52,28 @@ async function captureBody(body: Record<string, unknown>): Promise<FetchCall> {
 test("Command Code omits max_tokens when the client sends max_tokens: -1 (#5166)", async () => {
   const call = await captureBody({ max_tokens: -1 });
   assert.ok(
-    !("max_tokens" in call.body),
-    `max_tokens:-1 must be omitted, got max_tokens=${call.body.max_tokens}`
+    !("max_tokens" in (call.body.params as Record<string, unknown>)),
+    "max_tokens:-1 must be omitted"
   );
 });
 
 test("Command Code omits max_tokens when the client sends max_completion_tokens: -1 (#5166)", async () => {
   const call = await captureBody({ max_completion_tokens: -1 });
   assert.ok(
-    !("max_tokens" in call.body),
-    `max_completion_tokens:-1 must be omitted, got max_tokens=${call.body.max_tokens}`
+    !("max_tokens" in (call.body.params as Record<string, unknown>)),
+    "max_completion_tokens:-1 must be omitted"
   );
 });
 
 test("Command Code omits max_tokens when the client sends 0 (#5166)", async () => {
   const call = await captureBody({ max_tokens: 0 });
-  assert.ok(!("max_tokens" in call.body), "max_tokens:0 must be omitted");
+  assert.ok(
+    !("max_tokens" in (call.body.params as Record<string, unknown>)),
+    "max_tokens:0 must be omitted"
+  );
 });
 
 test("Command Code still honors a positive client max_tokens after the #5166 fix", async () => {
   const call = await captureBody({ max_tokens: 2048 });
-  assert.equal(call.body.max_tokens, 2048);
+  assert.equal((call.body.params as Record<string, unknown>).max_tokens, 2048);
 });

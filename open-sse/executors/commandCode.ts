@@ -1,4 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { REGISTRY } from "../config/providerRegistry.ts";
+import { getOriginalFetch } from "../utils/proxyFetch.ts";
+import {
+  buildCommandCodeCliBody,
+  buildCommandCodeCliHeaders,
+  normalizeCommandCodeWireModel,
+} from "../config/providers/registry/command-code/protocol.ts";
 import {
   BaseExecutor,
   mergeUpstreamExtraHeaders,
@@ -8,107 +15,190 @@ import {
 
 type JsonRecord = Record<string, unknown>;
 
-// Defensive server-side ceiling for a CLIENT-SUPPLIED max_tokens. The official
-// /provider/v1/chat/completions endpoint (documented OpenAI-format surface) is
-// the successor to the CLI-only /alpha/generate endpoint, which rejected any
-// params.max_tokens > 200_000 with a 400. We only clamp a client-supplied value
-// down; we never fabricate this number for requests that omit the field (see
-// clampMaxTokens / buildOpenAiBody).
-const MAX_COMMAND_CODE_TOKENS = 200_000;
-
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function usageFrom(value: unknown): JsonRecord | undefined {
+  if (!isRecord(value)) return undefined;
+  const input = numberValue(value.inputTokens ?? value.promptTokens);
+  const output = numberValue(value.outputTokens ?? value.completionTokens);
+  const total =
+    numberValue(value.totalTokens) ??
+    (input !== undefined && output !== undefined ? input + output : undefined);
+  if (input === undefined && output === undefined && total === undefined) return undefined;
+  return {
+    ...(input === undefined ? {} : { prompt_tokens: input }),
+    ...(output === undefined ? {} : { completion_tokens: output }),
+    ...(total === undefined ? {} : { total_tokens: total }),
+  };
 }
 
 function numberValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-// Clamp a client-supplied max_tokens to the endpoint ceiling, mirroring the
-// provider-driven clamp in antigravity.ts: we only intervene when the value is
-// present, positive AND would otherwise be rejected (> MAX_COMMAND_CODE_TOKENS).
-// A valid value is returned floored; anything absent, non-numeric or non-positive
-// returns undefined so the caller can OMIT the field entirely and let the
-// provider's upstream apply the model's own native default (rather than us
-// inventing a number). A non-positive value such as Zoo Code's max_tokens:-1
-// ("let the server choose") must be omitted, NOT forced to 1 — the old
-// Math.max(1,...) truncated output to a single token (#5166).
-function clampMaxTokens(value: unknown): number | undefined {
-  const numeric = numberValue(value);
-  if (numeric === undefined || numeric <= 0) return undefined;
-  return Math.min(Math.floor(numeric), MAX_COMMAND_CODE_TOKENS);
-}
-
-/**
- * Command Code serves most models under a vendor-prefixed wire id (e.g.
- * `xiaomi/mimo-v2.5`, `deepseek/deepseek-v4-pro`, `moonshotai/Kimi-K2.6`).
- * The command-code registry ids already carry the vendor prefix, so a bare id
- * reaching the executor is an operator-set custom model (e.g. the Vision Bridge
- * picker, #10809). Map the small set of documented bare ids to their
- * vendor-prefixed wire form; anything with an explicit `/` (or already wired)
- * passes through untouched. Kept minimal and doc-backed.
- */
-const COMMAND_CODE_BARE_MODEL_VENDOR_PREFIX: Readonly<Record<string, string>> = {
-  // Xiaomi MiMo V2.5 — a CC-served vision model not in the registry.
-  "mimo-v2.5": "xiaomi/mimo-v2.5",
-  "mimo-v2.5-pro": "xiaomi/mimo-v2.5-pro",
-};
-
-/**
- * Normalize an incoming model id to the wire form Command Code's provider API
- * accepts. Strips a leading provider prefix (`command-code/` / `cmd/`) that the
- * pipeline may have resolved, then maps known bare ids to their
- * vendor-prefixed form (see above).
- */
-function normalizeCommandCodeWireModel(model: string): string {
-  const trimmed = String(model || "").trim();
-  if (!trimmed) return trimmed;
-  const bare = trimmed.replace(/^(?:command-code|cmd)\//, "");
-  if (bare.includes("/")) return bare;
-  return COMMAND_CODE_BARE_MODEL_VENDOR_PREFIX[bare] ?? bare;
-}
-
-/**
- * Build a flat OpenAI chat.completions request body for the official
- * /provider/v1/chat/completions endpoint. The incoming body is already the
- * standard OpenAI chat.completions shape (registry `format: "openai"`), so this
- * is a passthrough that: normalizes the wire model id, forces the stream flag
- * to match the caller's expectation, clamps max_tokens, and lets reasoning /
- * payload-rule passthrough fields flow through untouched. No CLI envelope
- * (config/memory/taste/skills/permissionMode) and no CLI-shaped message
- * conversion here — /provider/v1 is the documented, standard API.
- */
-function buildOpenAiBody(
+function openAiChunk(
+  id: string,
   model: string,
-  body: unknown,
-  stream: boolean
-): { body: JsonRecord } {
-  const input = isRecord(body) ? { ...(body as JsonRecord) } : {};
-
-  const resolvedModel = normalizeCommandCodeWireModel(
-    typeof input.model === "string" && input.model.trim().length > 0
-      ? input.model
-      : model
-  );
-
-  const out: JsonRecord = {
-    ...input,
-    model: resolvedModel,
-    stream: stream === true,
+  delta: JsonRecord,
+  finishReason: unknown = null,
+  usage?: JsonRecord
+) {
+  return {
+    id,
+    object: "chat.completion.chunk",
+    created: Math.floor(Date.now() / 1000),
+    model,
+    choices: [{ index: 0, delta, finish_reason: finishReason }],
+    ...(usage ? { usage } : {}),
   };
+}
 
-  // Forward max_tokens only when the client actually supplied a positive value
-  // (clamped to the endpoint ceiling). Omitting it lets the provider's upstream
-  // apply the model's own native default; a non-positive value such as -1
-  // ("let the server choose") must be omitted, NOT coerced to 1 (#5166).
-  const maxTokens = clampMaxTokens(input.max_tokens ?? input.max_completion_tokens);
-  delete out.max_tokens;
-  delete out.max_completion_tokens;
-  if (maxTokens !== undefined) {
-    out.max_tokens = maxTokens;
+function cliEventToChunk(event: JsonRecord, id: string, model: string): JsonRecord | null {
+  if (event.type === "text-delta")
+    return openAiChunk(id, model, { content: String(event.text ?? "") });
+  if (event.type === "reasoning-delta") {
+    return openAiChunk(id, model, { reasoning_content: String(event.text ?? event.delta ?? "") });
   }
+  if (event.type === "finish-step" || event.type === "finish") {
+    const reason =
+      event.finishReason === "length"
+        ? "length"
+        : event.finishReason === "error"
+          ? "error"
+          : "stop";
+    return openAiChunk(id, model, {}, reason, usageFrom(event.usage));
+  }
+  if (event.type === "error") {
+    return { error: { message: String(event.message ?? event.error ?? "Command Code CLI error") } };
+  }
+  return null;
+}
 
-  return { body: out };
+async function readCliEvents(response: Response): Promise<JsonRecord[]> {
+  const text = await response.text();
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .flatMap((line) => {
+      const normalizedLine = line.startsWith("data:") ? line.slice(5).trim() : line;
+      if (normalizedLine === "[DONE]") return [];
+      try {
+        const value = JSON.parse(normalizedLine);
+        return isRecord(value) ? [value] : [];
+      } catch {
+        return [];
+      }
+    });
+}
+
+function createCommandCodeOpenAiStream(
+  upstream: Response,
+  model: string,
+  id = `chatcmpl-${randomUUID()}`
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const reader = upstream.body?.getReader();
+  let buffer = "";
+  let finished = false;
+  return new ReadableStream({
+    async pull(controller) {
+      if (!reader || finished) {
+        if (!finished) controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        finished = true;
+        controller.close();
+        return;
+      }
+      // The CLI emits lifecycle events (start, start-step, reasoning-start, …)
+      // before the first visible token. Keep reading until an event produces a
+      // client-facing chunk; returning from pull with no enqueue leaves the
+      // downstream reader waiting forever after the first lifecycle frame.
+      while (!finished) {
+        const { done, value } = await reader.read();
+        if (done) {
+          buffer += decoder.decode();
+          if (buffer.trim() && emitLine(buffer.trim(), controller)) return;
+          if (!finished) controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          finished = true;
+          controller.close();
+          return;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() || "";
+        let emitted = false;
+        for (const line of lines) {
+          emitted = emitLine(line.trim(), controller) || emitted;
+        }
+        if (emitted) return;
+      }
+    },
+    cancel() {
+      void reader?.cancel();
+    },
+  });
+
+  function emitLine(line: string, controller: ReadableStreamDefaultController<Uint8Array>) {
+    if (!line || finished) return false;
+    const normalizedLine = line.startsWith("data:") ? line.slice(5).trim() : line;
+    if (normalizedLine === "[DONE]") return false;
+    try {
+      const event = JSON.parse(normalizedLine);
+      if (!isRecord(event)) return false;
+      const chunk = cliEventToChunk(event, id, model);
+      if (!chunk) return false;
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+      if (event.type === "finish-step" || event.type === "finish" || event.type === "error") {
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        finished = true;
+        void reader?.cancel().catch(() => undefined);
+      }
+      return true;
+    } catch {
+      // Ignore CLI keepalive/diagnostic lines that are not JSON events.
+      return false;
+    }
+  }
+}
+
+async function cliResponseToChatCompletion(upstream: Response, model: string): Promise<Response> {
+  const events = await readCliEvents(upstream);
+  let content = "";
+  let reasoning = "";
+  let finishReason = "stop";
+  let usage: JsonRecord | undefined;
+  for (const event of events) {
+    if (event.type === "text-delta") content += String(event.text ?? "");
+    if (event.type === "reasoning-delta") reasoning += String(event.text ?? event.delta ?? "");
+    if (event.type === "finish-step" || event.type === "finish") {
+      finishReason = event.finishReason === "length" ? "length" : "stop";
+      usage = usageFrom(event.usage);
+    }
+  }
+  return new Response(
+    JSON.stringify({
+      id: `chatcmpl-${randomUUID()}`,
+      object: "chat.completion",
+      created: Math.floor(Date.now() / 1000),
+      model,
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: "assistant",
+            content,
+            ...(reasoning ? { reasoning_content: reasoning } : {}),
+          },
+          finish_reason: finishReason,
+        },
+      ],
+      ...(usage ? { usage } : {}),
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } }
+  );
 }
 
 export class CommandCodeExecutor extends BaseExecutor {
@@ -118,40 +208,37 @@ export class CommandCodeExecutor extends BaseExecutor {
 
   buildUrl() {
     const baseUrl = (this.config.baseUrl || "https://api.commandcode.ai").replace(/\/$/, "");
-    return `${baseUrl}${this.config.chatPath || "/provider/v1/chat/completions"}`;
+    // A persisted provider row may still contain the former Provider API path.
+    // Command Code Go access is only available through the CLI agent protocol;
+    // do not let stale database configuration route it back to /provider/v1.
+    return `${baseUrl}/alpha/generate`;
   }
 
   async execute({ model, body, stream, credentials, signal, upstreamExtraHeaders }: ExecuteInput) {
     const apiKey = credentials?.apiKey || credentials?.accessToken;
     if (!apiKey) throw new Error("Command Code API key required");
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      Accept: stream ? "text/event-stream" : "application/json",
-    };
+    const sessionId = randomUUID();
+    const wireModel = normalizeCommandCodeWireModel(model);
+    const headers = buildCommandCodeCliHeaders(apiKey, sessionId);
     mergeUpstreamExtraHeaders(headers, upstreamExtraHeaders);
-
-    // The combo/single-model dispatch boundary does not always run
-    // sanitizeRequestForResolvedTarget before reaching this executor (combo
-    // path), and Command Code rejects unsupported reasoning_effort values
-    // outright. Sanitize here — the executor is the last line of defense for
-    // the wire body.
+    // The CLI endpoint is NDJSON even when the client-facing response is SSE.
+    // Do not let client Accept headers change the upstream wire format.
+    headers.Accept = "application/x-ndjson";
     const sanitizedBody = sanitizeReasoningEffortForProvider(body, this.provider, model);
-    const { body: transformedBody } = buildOpenAiBody(model, sanitizedBody, stream);
+    const transformedBody = buildCommandCodeCliBody(model, sanitizedBody, sessionId);
     const url = this.buildUrl();
-    const upstream = await fetch(url, {
+    // Command Code's CLI is a direct control-plane connection. The global
+    // OmniRoute fetch wrapper may inherit a stale account proxy context; use
+    // the native fetch for production while retaining the test stub.
+    const fetchImpl = process.env.NODE_ENV === "production" ? getOriginalFetch() : globalThis.fetch;
+    const upstream = await fetchImpl(url, {
       method: "POST",
       headers,
       body: JSON.stringify(transformedBody),
       signal: signal || undefined,
     });
-
     if (!upstream.ok) {
-      const errorText = await upstream.text().catch(() => {
-        console.warn("[commandCode] upstream text failed");
-        return "";
-      });
+      const errorText = await upstream.text().catch(() => "");
       return {
         response: new Response(errorText || `Command Code API error ${upstream.status}`, {
           status: upstream.status,
@@ -163,10 +250,17 @@ export class CommandCodeExecutor extends BaseExecutor {
         transformedBody,
       };
     }
-
-    // The /provider/v1/chat/completions endpoint returns standard OpenAI-format
-    // SSE (stream) or JSON (non-stream) straight through, so the upstream
-    // Response passes through untouched — no AI-SDK/CLI event re-parsing needed.
-    return { response: upstream, url, headers, transformedBody };
+    const response = stream
+      ? new Response(createCommandCodeOpenAiStream(upstream, wireModel), {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+        })
+      : {
+          response: await cliResponseToChatCompletion(upstream, wireModel),
+          url,
+          headers,
+          transformedBody,
+        };
+    return response instanceof Response ? { response, url, headers, transformedBody } : response;
   }
 }

@@ -1,13 +1,9 @@
 /**
  * Vision / multimodal support tests for the Command Code executor.
  *
- * Since #10265 the executor posts to the documented /provider/v1/chat/completions
- * endpoint, which speaks the standard OpenAI chat.completions format. User image
- * content (OpenAI `image_url` parts and Anthropic Messages-style source blocks)
- * passes through unchanged — the endpoint natively understands both shapes, so
- * there is no CLI-specific conversion (and no CLI-wire image stripping) left to
- * verify. These tests pin that passthrough plus the #10809 wire-model
- * normalization, which still applies to /provider/v1.
+ * The CLI envelope preserves user image content (OpenAI `image_url` parts and
+ * Anthropic Messages-style source blocks) inside `params.messages`. These tests
+ * pin that passthrough plus the #10809 wire-model normalization.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -55,11 +51,12 @@ function captureFetch(response: Response) {
 }
 
 function userContent(calls: FetchCall[]): unknown {
-  return (calls[0].body.messages as Record<string, unknown>[])[0].content;
+  const params = calls[0].body.params as Record<string, unknown>;
+  return (params.messages as Record<string, unknown>[])[0].content;
 }
 
 function wireModel(calls: FetchCall[]): string {
-  return calls[0].body.model as string;
+  return (calls[0].body.params as Record<string, unknown>).model as string;
 }
 
 // ── wire model normalization (#10809) ────────────────────────────────
@@ -100,7 +97,7 @@ test("#10809: already vendor-prefixed wire ids pass through unchanged", async ()
   assert.equal(wireModel(calls), "deepseek/deepseek-v4-pro");
 });
 
-// ── image content passthrough (OpenAI /provider/v1 surface) ──────────
+// ── image content passthrough ────────────────────────────────────────
 
 test("image_url parts pass through unchanged (text + image preserved)", async () => {
   const calls = captureFetch(okResponse());
@@ -125,10 +122,7 @@ test("image_url parts pass through unchanged (text + image preserved)", async ()
   assert.equal(content.length, 2);
   assert.equal(content[0].type, "text");
   assert.equal(content[1].type, "image_url", "image_url part preserved as-is");
-  assert.equal(
-    (content[1].image_url as { url: string }).url,
-    "data:image/png;base64,iVBORw0KGgo="
-  );
+  assert.equal((content[1].image_url as { url: string }).url, "data:image/png;base64,iVBORw0KGgo=");
 });
 
 test("Anthropic Messages-style source image blocks pass through unchanged", async () => {
@@ -161,7 +155,10 @@ test("Anthropic Messages-style source image blocks pass through unchanged", asyn
   assert.equal(content.length, 2, "text + image parts preserved");
   assert.equal(content[1].type, "image");
   assert.equal((content[1].source as { type: string }).type, "base64");
-  assert.equal((content[1].source as { data: string }).data, "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
+  assert.equal(
+    (content[1].source as { data: string }).data,
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+  );
 });
 
 test("Anthropic source.url image block passes through unchanged", async () => {
@@ -230,8 +227,8 @@ test("plain string content passes through unchanged", async () => {
 });
 
 test("text-only model still forwards image parts (passthrough, no CLI stripping)", async () => {
-  // The /provider/v1 OpenAI surface accepts image content for any model id; the
-  // executor forwards content untouched, so there is no text-only stripping.
+  // The executor forwards image content untouched, so there is no text-only
+  // stripping before the CLI envelope is built.
   const calls = captureFetch(okResponse());
   await getExecutor("command-code").execute({
     model: "deepseek/deepseek-v4-pro",
