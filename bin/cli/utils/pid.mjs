@@ -59,6 +59,90 @@ export function isPidRunning(pid) {
   }
 }
 
+// A port that is already owned must be reported, not spawned into. `omniroute
+// serve` used to hand the conflict to the child, which died with EADDRINUSE
+// twice on the supervisor's restart budget and printed three raw Node stack
+// traces without ever saying another instance owned the port. It did that
+// AFTER writing the pid files, so the doomed second instance de-registered the
+// healthy running one (supervisor/.pid left pointing at the dead starter,
+// server/.pid deleted outright).
+//
+// Discovery mirrors killByPort() in bin/cli/commands/stop.mjs (netstat on
+// win32, lsof elsewhere); the two are worth consolidating next time stop.mjs
+// is touched.
+export async function findListeningPids(port, deps = {}) {
+  const platform = deps.platform || process.platform;
+  let exec = deps.execFileAsync;
+  if (!exec) {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    exec = promisify(execFile);
+  }
+  try {
+    if (platform === "win32") {
+      const { stdout } = await exec("netstat", ["-ano"]);
+      return parseNetstatListeningPids(stdout, port);
+    }
+    const { stdout } = await exec("lsof", ["-ti", `:${port}`]);
+    return stdout
+      .trim()
+      .split("\n")
+      .map((entry) => parseInt(entry, 10))
+      .filter((entry) => Number.isFinite(entry) && entry > 0);
+  } catch {
+    // Tool missing (ENOENT) or unusable: "no listener" cannot be distinguished
+    // from "cannot look" here, so report null and let the caller decide. The
+    // serve preflight bind-probes the port in that case (#14518) — a false
+    // "busy" would block a legitimate start, the worse failure of the two.
+    return null;
+  }
+}
+
+// Bind-probe a port without any external binary: try to listen on it. Answers
+// "is anything holding this port" on hosts without lsof/netstat (Termux, slim
+// containers) and on any other discovery failure. EADDRINUSE from the probe
+// attempt means the port is held; EACCES (privileged port) and friends are
+// reported as free — the guard must not block a legitimate start it cannot
+// actually observe (#14518 keeps the false-"busy" failure mode the worse one).
+export async function probePortFree(port, deps = {}) {
+  const net = deps.net || (await import("node:net"));
+  const bindable = (host) =>
+    new Promise((resolve) => {
+      const probe = net.createServer();
+      probe.once("error", (err) => {
+        probe.close();
+        resolve(err.code !== "EADDRINUSE");
+      });
+      probe.listen({ port, host }, () => {
+        probe.close(() => resolve(true));
+      });
+    });
+  // macOS lets a bind on one address succeed while another address holds the
+  // port, so a server on 0.0.0.0 (the default), 127.0.0.1 or ::1 (localhost) is
+  // only visible to a probe on that same address. A host without one of these
+  // addresses gets EADDRNOTAVAIL, which reads as free.
+  for (const host of [undefined, "0.0.0.0", "127.0.0.1", "::1"]) {
+    if (!(await bindable(host))) return false;
+  }
+  return true;
+}
+
+function parseNetstatListeningPids(stdout, port) {
+  const portCol = `:${port}`;
+  const pids = [];
+  for (const line of stdout.split(/\r?\n/)) {
+    const cols = line.trim().split(/\s+/);
+    // Proto  LocalAddress  ForeignAddress  State  PID
+    if (cols.length < 5) continue;
+    if (cols[0] !== "TCP" && cols[0] !== "TCPv6") continue;
+    if (!(cols[1] || "").endsWith(portCol)) continue;
+    if ((cols[cols.length - 2] || "").toUpperCase() !== "LISTENING") continue;
+    const pid = parseInt(cols[cols.length - 1], 10);
+    if (Number.isFinite(pid) && pid > 0 && !pids.includes(pid)) pids.push(pid);
+  }
+  return pids;
+}
+
 export function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

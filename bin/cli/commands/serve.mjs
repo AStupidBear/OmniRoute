@@ -8,6 +8,8 @@ import {
   writePidFile,
   cleanupPidFile,
   waitForServer,
+  findListeningPids,
+  probePortFree,
   resolveReadyTimeoutMs,
 } from "../utils/pid.mjs";
 import {
@@ -240,6 +242,27 @@ export async function runServe(opts = {}) {
     process.exit(1);
   }
 
+  // Refuse to start a second instance on a port something else already owns,
+  // BEFORE any pid file is written or any child is spawned. Otherwise the
+  // doomed child's EADDRINUSE arrives only after this process has rewritten
+  // the pid files of the healthy instance that actually owns the port.
+  // findListeningPids() returning null means the discovery tool itself is
+  // missing or unusable (Termux, slim containers, #14518) — fall back to a
+  // bind probe so the guard still answers before spawning the doomed child.
+  let busyPids = await findListeningPids(dashboardPort);
+  if (busyPids === null) {
+    // Discovery tool missing/unusable (#14518): the bind probe is the guard.
+    if (!(await probePortFree(dashboardPort))) busyPids = [null];
+  } else if (busyPids.length === 0) {
+    // Discovery ran and saw nothing, but that window can race a starting
+    // instance; a bind probe costs nothing and doubles as confirmation.
+    if (!(await probePortFree(dashboardPort))) busyPids = [null];
+  }
+  if (busyPids.length > 0) {
+    reportPortInUse(dashboardPort, busyPids);
+    process.exit(1);
+  }
+
   console.log(`  \x1b[2m⏳ Starting server...\x1b[0m\n`);
 
   // #5172/#5160/#5152: default the V8 heap to ~35% of physical RAM (clamped
@@ -316,6 +339,27 @@ export async function runServe(opts = {}) {
       readyTimeoutMs: resolveReadyTimeoutMs({ timeoutMs: opts.readyTimeout }),
     }
   );
+}
+
+/**
+ * Explain a port conflict in terms the operator can act on: who owns the port,
+ * and the two ways out. Exported for unit tests.
+ */
+export function reportPortInUse(port, pids = []) {
+  const known = pids.filter((pid) => Number.isFinite(pid) && pid > 0);
+  const owner =
+    known.length === 0
+      ? "an unknown process"
+      : known.length === 1
+        ? `PID ${known[0]}`
+        : `PIDs ${known.join(", ")}`;
+  console.error(`\n\x1b[31m✖ Port ${port} is already in use by ${owner}.\x1b[0m`);
+  console.error(
+    `  Another OmniRoute is most likely already serving there, so open` +
+      ` ${urlScheme}://localhost:${port} before starting a second one.`
+  );
+  console.error(`  To replace it:    \x1b[36momniroute stop\x1b[0m, then start again`);
+  console.error(`  To run alongside: \x1b[36momniroute serve --port <other-port>\x1b[0m\n`);
 }
 
 function runDaemon(serverJs, env, memoryLimit, dashboardPort, apiPort) {
