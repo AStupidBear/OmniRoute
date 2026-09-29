@@ -218,6 +218,21 @@ export function findModelName(aliasOrId: string, modelId: string): string {
 const OPENCODE_MUSE_SPARK_ALIASES = new Set(["oc", "opencode-zen", "opencode-go"]);
 const MUSE_SPARK_MODEL_PATTERN = /^muse-spark(?:-|$)/i;
 
+const OPENCODE_MODEL_PREFIXES = ["opencode/", "oc/", "opencode-zen/", "opencode-go/"] as const;
+
+/**
+ * OpenCode Zen's Responses endpoint accepts the upstream model id only. The
+ * OpenCode executor keeps this guard because `/v1/responses` callers can reach
+ * it without the Chat Completions model-normalization path.
+ */
+export function stripOpencodeModelPrefix(model: unknown): unknown {
+  if (typeof model !== "string") return model;
+  for (const prefix of OPENCODE_MODEL_PREFIXES) {
+    if (model.startsWith(prefix)) return model.slice(prefix.length);
+  }
+  return model;
+}
+
 export function getModelTargetFormat(aliasOrId: string, modelId: string): string | null {
   // Accept either the public alias ("cmd") or the raw provider id ("command-code"),
   // mirroring getProviderModels (same pattern as #2798/#3870).
