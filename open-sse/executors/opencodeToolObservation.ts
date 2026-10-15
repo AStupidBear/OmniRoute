@@ -13,9 +13,9 @@
  * that model, at that moment. This module remembers those names so a later request
  * carrying none can borrow them, and forgets them when a borrowed set is refused.
  *
- * Only names are kept — never a schema, a description, or any conversation content — and
- * the placeholder rebuilt from them declares an empty parameter object, so a borrowed name
- * is an entry in a list rather than a callable tool.
+ * Only names are kept — never a schema, a description, or conversation content. Known
+ * OpenCode CLI names are rebuilt from the bundled official schemas; other borrowed names
+ * remain inert compatibility entries.
  *
  * Leaf module: no internal imports, so the executor and the contract can both use it.
  */
