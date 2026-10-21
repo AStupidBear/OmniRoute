@@ -117,11 +117,12 @@ export function prefixRoutesToProvider(prefix: string, providerId: string): bool
 /**
  * Alias-aware variant of `prefixRoutesToProvider`, for the combo prefix-
  * stripping path ONLY (`getProviderPrefixes` below). Also accepts a prefix
- * that resolves to `providerId`'s CANONICAL routing target — e.g. an
- * "opencode/" step canonically routes to "opencode-zen", so this recognizes
- * "opencode" as a valid prefix for the "opencode-zen" provider even though
- * `prefixRoutesToProvider("opencode", "opencode-zen")` is false. Never use
- * this for the catalog.ts anti-collision guard: that check must stay strict.
+ * that resolves to `providerId`'s canonical target for the probe model. The
+ * synthetic `__omniroute_probe__` follows OpenCode's premium route to
+ * `opencode-zen`, while concrete free-tier model ids under that prefix may
+ * resolve to `opencode`. Never use this for the catalog anti-collision guard:
+ * that check must stay strict and use a model-specific probe when routing is
+ * model-sensitive.
  */
 export function prefixRoutesToCanonicalProvider(prefix: string, providerId: string): boolean {
   if (prefixRoutesToProvider(prefix, providerId)) return true;

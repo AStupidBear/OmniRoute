@@ -5,8 +5,8 @@
  * Root cause: resolveProviderAlias() did a single-hop lookup
  * (`ALIAS_TO_PROVIDER_ID[alias] || alias`). The registry has genuine two-hop chains:
  * the parent OpenCode provider registers `id: "opencode", alias: "oc"` (so
- * `oc -> opencode`), and a manual override maps `opencode -> opencode-zen` (the
- * main free tier). With single-hop, `resolveProviderAlias("oc")` returned the
+ * `oc -> opencode`), and a manual override maps `opencode -> opencode-zen` for
+ * premium models. With single-hop, `resolveProviderAlias("oc")` returned the
  * intermediate `"opencode"` instead of the final `"opencode-zen"`, so `oc/<model>`
  * resolved to the wrong provider.
  *
@@ -14,10 +14,9 @@
  * These assertions FAIL on the old single-hop implementation and pass on the fix.
  *
  * RECONCILED at v3.8.44 with the #2901 contract: the chain STOPS as soon as a hop
- * lands on a REGISTERED provider id. The keyless "opencode"/"oc" pair that
- * motivated it was removed (docs/reference/REMOVED_PROVIDERS.md). Transitivity
- * still applies across alias-only hops, and the loop/depth guards from #5918 are
- * retained.
+ * lands on a REGISTERED provider id. This keeps `oc/` on OpenCode Free while
+ * model-aware parsing handles the premium `opencode/` route. Transitivity still
+ * applies across alias-only hops, and the loop/depth guards from #5918 remain.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -26,6 +25,7 @@ import { resolveProviderAlias } from "../../open-sse/services/model.ts";
 
 test("resolveProviderAlias resolves a direct one-hop alias", () => {
   assert.equal(resolveProviderAlias("opencode"), "opencode-zen");
+  assert.equal(resolveProviderAlias("oc"), "opencode");
 });
 
 test("resolveProviderAlias returns a terminal id unchanged (id === alias)", () => {

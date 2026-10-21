@@ -28,10 +28,11 @@ const REFRESH_FLOOR_MS = 30_000;
 
 /**
  * Catalog sections read for the model surface, by provider id (= public alias for both).
- * The catalog's `opencode` section is OpenCode Zen; the keyless OpenCode Free provider
- * (`opencode` / `oc`) was removed in #16310, so no other id maps here.
+ * The `opencode` section supplies model surfaces for both the public inference route and
+ * authenticated Zen; Go has its own section.
  */
 const NPM_CATALOG_KEY_BY_PROVIDER: Record<string, string> = {
+  opencode: "opencode",
   "opencode-zen": "opencode",
   "opencode-go": "opencode-go",
 };

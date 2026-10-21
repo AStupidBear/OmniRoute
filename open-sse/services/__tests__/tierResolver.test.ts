@@ -301,8 +301,7 @@ describe("TierResolver", () => {
         true
       );
       expect(derived.includes("duckduckgo-web")).toBe(true);
-      // The keyless `opencode` provider was removed (docs/reference/REMOVED_PROVIDERS.md).
-      expect(derived.includes("opencode")).toBe(false);
+      expect(derived.includes("opencode")).toBe(true);
     });
 
     it("deriveNoAuthFreeProviders excludes non-LLM noAuth providers", () => {

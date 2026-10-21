@@ -14,7 +14,8 @@ for (const [id, alias] of Object.entries(PROVIDER_ID_TO_ALIAS)) {
 // Manual alias overrides — maps slug-style prefixes to canonical provider IDs.
 // These live outside the registry because they represent multiple providers
 // or backward-compatible slug changes, not a single provider's display name.
-// opencode/ → opencode-zen (OpenCode Zen; opencode-go is a separate tier)
+// `opencode/` defaults to OpenCode Zen; parseModel sends free models to the
+// no-auth inference provider. `opencode-zen/` remains the explicit Zen route.
 ALIAS_TO_PROVIDER_ID["opencode"] = "opencode-zen";
 // xiaomi/ is the user-visible prefix for MiMo models; register it so
 // parseModel("xiaomi/mimo-v2-flash") resolves provider = "xiaomi-mimo" instead

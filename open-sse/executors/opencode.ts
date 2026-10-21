@@ -32,6 +32,7 @@ import {
   resolveOpencodeCliDefaults,
 } from "../utils/opencodeHeaders.ts";
 import { projectOpencodeSessionBody } from "../utils/opencodeSessionIdentity.ts";
+import { applyOpencodeZenInferenceHeaders } from "../utils/opencodeZenInferenceHeaders.ts";
 import { listForRequest, releaseRequestList } from "./opencodeAccountScope.ts";
 import { applyOpencodeToolNameLengthAliases } from "./toolNameLengthAlias.ts";
 import type { ScopedAccount, ScopedAccountHealth } from "./opencodeAccountScope.ts";
@@ -1348,6 +1349,9 @@ export class OpencodeExecutor extends BaseExecutor {
     // expected outcome rather than a warning.
     const gatedScope =
       Boolean(model) && isGatedFreeTierRequest(this._surface(), this.provider, model);
+    if (gatedScope && this._surface() === "zen-inference" && !key) {
+      headers.Authorization = "Bearer public";
+    }
 
     if (key) {
       if (this._requestFormat === "claude" || this.usesZenApiKeyAuth()) {
@@ -1387,6 +1391,10 @@ export class OpencodeExecutor extends BaseExecutor {
         reencodeSession: gatedScope,
         v2Fingerprint,
       });
+    }
+
+    if (gatedScope && this._surface() === "zen-inference" && !key) {
+      applyOpencodeZenInferenceHeaders(headers, clientHeaders ?? {}, body);
     }
 
     // The Muse Responses workaround that forced a UUID session here is gone: the shape it

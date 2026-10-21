@@ -31,9 +31,11 @@
  * for JSON, reusing the shared event-stream parsers.
  */
 import { parseSSEToOpenAIResponse, parseSSEToResponsesOutput } from "../handlers/sseParser.ts";
-import { readSyncedOpencodeFamilyModelIds } from "@/lib/db/models";
-import { getModelCatalogCacheVersion } from "@/lib/db/readCache";
-import { getModelsDevPricing, getSyncedCapability } from "@/lib/modelsDevSync";
+import {
+  _setOpencodeFreeModelsForTests,
+  isPremiumOpencodeModel,
+} from "../config/opencodeFreeTierModels.ts";
+import opencodeZenTools from "./opencodeZenTools.json";
 import {
   confirmBorrowedToolNames,
   getObservedToolNames,
@@ -51,6 +53,8 @@ import {
   rememberAttempt,
   shapeKeyOf,
 } from "./opencodeRequestShape.ts";
+
+export { _setOpencodeFreeModelsForTests, isPremiumOpencodeModel };
 
 /**
  * What one gated request declared, kept until its outcome is known.
@@ -76,133 +80,6 @@ export interface FreeTierContractAttempt {
 }
 
 /**
- * Free-vs-premium is derived from the synced catalog when one exists, not a static list.
- *
- * The upstream free tier rotates constantly — models.dev lists dozens of `-free` ids and
- * adds/retires them without notice — so a hard-coded set goes stale overnight (measured
- * 2026-10-14: 5 of the 6 ids the old `OPENCODE_FREE_MODELS` held were already absent from
- * the live `/zen/v1/models` list, 4 of them `deprecated`). When the catalog is synced, a
- * model is free-tier iff:
- *
- *   1. **available** — its id is in the synced live catalog for the `opencode` family
- *      (what `GET https://opencode.ai/zen/v1/models` reported at discovery time), which
- *      catches ids the upstream has since delisted; and
- *   2. **free** — models.dev reports `cost.input === 0 && cost.output === 0` for it, which
- *      catches free models that carry no `-free` suffix (`big-pickle`) and drops the ones
- *      that gained a price; and
- *   3. **not deprecated** — `status !== "deprecated"` as a secondary guard.
- *
- * Signals are read synchronously from data OmniRoute already syncs — the live catalog via
- * the discovery writer (`syncedAvailableModels`) and cost/status via `models.dev`
- * (`modelsDevSync.ts`) — memoized on `getModelCatalogCacheVersion()`, which every catalog
- * write bumps. No per-request fetch, and no table to rot.
- *
- * When the catalog has never been synced (a fresh install, or a unit test with no DB), the
- * check **falls back to the legacy heuristic** — the `-free` suffix plus the registry's
- * known free ids — rather than treating every model as premium. Failing closed there would
- * 402 every free model on an unsynced deployment and regress the pre-change behavior; the
- * fallback keeps the status quo until discovery runs, and the synced catalog then takes
- * over. `OPENCODE_LEGACY_FREE_MODELS` is therefore retained only as that fallback.
- *
- * For `opencode-go`, there is no free tier — ALL models require an API key.
- */
-interface OpencodeFreeCatalog {
-  /** Catalog version this snapshot was built from; a bump invalidates it. */
-  readonly version: number;
-  /** Free ids from the synced catalog, or `null` when no catalog has been synced. */
-  readonly free: ReadonlySet<string> | null;
-}
-
-/**
- * Legacy free ids kept only as the unsynced-catalog fallback (see the block above).
- *
- * `deepseek-v4.1-flash-free` replaced the delisted `deepseek-v4-flash-free` in the zen
- * registry; the rotating `-free` ids are covered by the suffix rule alongside this set.
- */
-const OPENCODE_LEGACY_FREE_MODELS = new Set([
-  "big-pickle",
-  "deepseek-v4.1-flash-free",
-  "mimo-v2.5-free",
-  "hy3-free",
-  "nemotron-3-ultra-free",
-  "north-mini-code-free",
-]);
-
-/** Provider ids whose live catalog feeds the `opencode` family (canonical + aliases). */
-const OPENCODE_CATALOG_PROVIDER_IDS = ["opencode-zen", "opencode"] as const;
-
-let freeCatalogCache: OpencodeFreeCatalog | null = null;
-
-/**
- * Test seam: pin the free-model set without a synced catalog, so unit tests can exercise
- * `isPremiumOpencodeModel` (and the request contract it gates) deterministically. Pass
- * `null` to restore the catalog-driven lookup.
- */
-let testFreeModelsOverride: ReadonlySet<string> | null = null;
-
-export function _setOpencodeFreeModelsForTests(ids: readonly string[] | null): void {
-  testFreeModelsOverride = ids === null ? null : new Set(ids);
-  freeCatalogCache = null;
-}
-
-/** The free ids the synced catalog implies, or `null` when nothing has been synced. */
-function deriveFreeIdsFromCatalog(): Set<string> | null {
-  try {
-    const available = readSyncedOpencodeFamilyModelIds();
-    if (available.size === 0) return null;
-    const free = new Set<string>();
-    const pricing = getModelsDevPricing();
-    const byProvider =
-      pricing[OPENCODE_CATALOG_PROVIDER_IDS[0]] ?? pricing[OPENCODE_CATALOG_PROVIDER_IDS[1]];
-    for (const id of available) {
-      const cost = byProvider?.[id];
-      if (!cost || cost.input !== 0 || cost.output !== 0) continue;
-      const status = getSyncedCapability(OPENCODE_CATALOG_PROVIDER_IDS[0], id)?.status;
-      if (status === "deprecated") continue;
-      free.add(id);
-    }
-    return free;
-  } catch {
-    // No DB / no synced pricing yet: no catalog, fall back to the legacy heuristic.
-    return null;
-  }
-}
-
-/** Build (or reuse) the free-model snapshot for the current catalog version. */
-function opencodeFreeModelCatalog(): ReadonlySet<string> | null {
-  if (testFreeModelsOverride) return testFreeModelsOverride;
-
-  const version = getModelCatalogCacheVersion();
-  if (freeCatalogCache && freeCatalogCache.version === version) return freeCatalogCache.free;
-
-  const free = deriveFreeIdsFromCatalog();
-  freeCatalogCache = { version, free };
-  return free;
-}
-
-/**
- * Determine whether a model requires an API key on the given opencode provider.
- *
- * - `opencode-go`: ALL models require a key (no free tier).
- * - `opencode` / `opencode-zen`: premium = any model NOT in the synced free catalog
- *   (available ∩ free ∧ not deprecated). With no synced catalog, the legacy heuristic
- *   (`-free` suffix or the registry's known free ids) is used instead.
- * - Unknown models are assumed premium (fail-safe).
- */
-export function isPremiumOpencodeModel(model: string, provider: string): boolean {
-  // opencode-go has no free tier — every model requires a key.
-  if (provider === "opencode-go") return true;
-
-  const id = model.trim();
-  const catalog = opencodeFreeModelCatalog();
-  if (catalog) return !catalog.has(id);
-
-  // Unsynced catalog: the legacy rule, so an unsynced deployment keeps its behavior.
-  if (id.endsWith("-free")) return false;
-  return !OPENCODE_LEGACY_FREE_MODELS.has(id);
-}
-
-/**
  * The upstream surface a request is served on, as told apart by the registry `baseUrl`.
  *
  * The gate is a property of the surface, not of billing: `/zen/v1` refuses a request that
@@ -212,9 +89,10 @@ export function isPremiumOpencodeModel(model: string, provider: string): boolean
  * covers every entry of the family — including the `oc` alias, which resolves to
  * `opencode` before an executor is ever picked.
  */
-export type OpencodeSurface = "zen" | "go" | "other";
+export type OpencodeSurface = "zen" | "zen-inference" | "go" | "other";
 
 const ZEN_SURFACE_BASE_URL = "https://opencode.ai/zen/v1";
+const ZEN_INFERENCE_SURFACE_BASE_URL = "https://opencode.ai/inference/v1";
 const GO_SURFACE_BASE_URL = "https://opencode.ai/zen/go/v1";
 
 /**
@@ -227,6 +105,7 @@ export const FREE_TIER_INFERENCE_BASE_URL = "https://opencode.ai/inference/v1";
 
 /** Tell the surfaces apart by registry `baseUrl`, so provider ids and aliases stay out. */
 export function surfaceFromBaseUrl(baseUrl: string | null | undefined): OpencodeSurface {
+  if (baseUrl === ZEN_INFERENCE_SURFACE_BASE_URL) return "zen-inference";
   if (baseUrl === ZEN_SURFACE_BASE_URL) return "zen";
   if (baseUrl === GO_SURFACE_BASE_URL) return "go";
   return "other";
@@ -256,7 +135,7 @@ export function isGatedFreeTierRequest(
   provider: string,
   model: string
 ): boolean {
-  if (surface !== "zen") return false;
+  if (surface !== "zen" && surface !== "zen-inference") return false;
   return !isPremiumOpencodeModel(model, provider);
 }
 
@@ -314,6 +193,34 @@ const PLACEHOLDER_TOOL_PARAMETER_SCHEMAS: Readonly<Record<string, Record<string,
   grep: { type: "object", properties: { pattern: { type: "string" } }, required: ["pattern"] },
   read: { type: "object", properties: { filePath: { type: "string" } }, required: ["filePath"] },
 };
+const OPENCODE_ZEN_FREE_TOOL_NAMES = ["shell", "edit", "glob", "grep", "read"] as const;
+
+function toolNameOf(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const tool = value as { name?: unknown; function?: { name?: unknown } };
+  const name = typeof tool.name === "string" ? tool.name : tool.function?.name;
+  return typeof name === "string" ? name : undefined;
+}
+
+function buildFreeTierTool(
+  name: string,
+  requestFormat: string | null,
+  v2Fingerprint: boolean,
+  useOfficialSchema: boolean
+): Record<string, unknown> {
+  const definition = useOfficialSchema
+    ? opencodeZenTools[name as keyof typeof opencodeZenTools]
+    : null;
+  const description = definition?.description ?? placeholderToolDescription(name, v2Fingerprint);
+  const parameters = definition?.parameters ?? placeholderToolParameters(name, v2Fingerprint);
+  if (requestFormat === "openai-responses") {
+    return { type: "function", name, description, parameters };
+  }
+  return {
+    type: "function",
+    function: { name, description, parameters },
+  };
+}
 
 /**
  * Parameter schema for an injected placeholder tool named `name`. With the opt-in v2
@@ -355,46 +262,50 @@ export function applyFreeTierRequestContract<T>(
   body: T,
   requestFormat: string | null,
   placeholderNames: readonly string[] = [PLACEHOLDER_TOOL_NAME],
-  v2Fingerprint = false
+  v2Fingerprint = false,
+  useOfficialSchemas = false
 ): T {
   if (!body || typeof body !== "object" || Array.isArray(body)) return body;
   const record = body as Record<string, unknown>;
   const next: Record<string, unknown> = { ...record, stream: true };
   if (v2Fingerprint) sanitizeToolChoice(next);
 
-  const existingNames = new Set(clientToolNamesOf(next));
+  const existingTools = Array.isArray(next.tools) ? [...next.tools] : [];
+  const existingNames = new Set<string>();
+  let normalizedTools: unknown[] = existingTools;
+  if (useOfficialSchemas) {
+    normalizedTools = [];
+    for (const tool of existingTools) {
+      const name = toolNameOf(tool);
+      if (name && Object.hasOwn(opencodeZenTools, name)) {
+        if (!existingNames.has(name)) {
+          normalizedTools.push(buildFreeTierTool(name, requestFormat, v2Fingerprint, true));
+        }
+        existingNames.add(name);
+      } else {
+        normalizedTools.push(tool);
+        if (name) existingNames.add(name);
+      }
+    }
+  } else {
+    for (const name of clientToolNamesOf(next)) existingNames.add(name);
+  }
   const baseNames = placeholderNames.length > 0 ? placeholderNames : [PLACEHOLDER_TOOL_NAME];
   const namesToAdd = baseNames.filter((name) => !existingNames.has(name));
-
-  if (namesToAdd.length === 0) return next as T;
-
-  const existingTools = Array.isArray(next.tools) ? [...next.tools] : [];
+  const tools = [
+    ...normalizedTools,
+    ...namesToAdd.map((name) =>
+      buildFreeTierTool(name, requestFormat, v2Fingerprint, useOfficialSchemas)
+    ),
+  ];
 
   if (requestFormat === "openai-responses") {
-    next.tools = [
-      ...existingTools,
-      ...namesToAdd.map((name) => ({
-        type: "function",
-        name,
-        description: placeholderToolDescription(name, v2Fingerprint),
-        parameters: placeholderToolParameters(name, v2Fingerprint),
-      })),
-    ];
+    next.tools = tools;
     return next as T;
   }
 
   if (requestFormat === "openai" || requestFormat === null) {
-    next.tools = [
-      ...existingTools,
-      ...namesToAdd.map((name) => ({
-        type: "function",
-        function: {
-          name,
-          description: placeholderToolDescription(name, v2Fingerprint),
-          parameters: placeholderToolParameters(name, v2Fingerprint),
-        },
-      })),
-    ];
+    next.tools = tools;
     return next as T;
   }
 
@@ -427,7 +338,8 @@ export function mergeClientToolsWithObserved<T>(
   model: string,
   session: string | undefined,
   configured: readonly string[],
-  v2Fingerprint = false
+  v2Fingerprint = false,
+  useOfficialSchemas = false
 ): T {
   if (!body || typeof body !== "object" || Array.isArray(body)) return body;
   const record = body as Record<string, unknown>;
@@ -441,26 +353,18 @@ export function mergeClientToolsWithObserved<T>(
   if (requestFormat === "openai-responses") {
     next.tools = [
       ...(record.tools as unknown[]),
-      ...missing.map((name) => ({
-        type: "function",
-        name,
-        description: placeholderToolDescription(name, v2Fingerprint),
-        parameters: placeholderToolParameters(name, v2Fingerprint),
-      })),
+      ...missing.map((name) =>
+        buildFreeTierTool(name, requestFormat, v2Fingerprint, useOfficialSchemas)
+      ),
     ];
     return next as T;
   }
   if (requestFormat === "openai" || requestFormat === null) {
     next.tools = [
       ...(record.tools as unknown[]),
-      ...missing.map((name) => ({
-        type: "function",
-        function: {
-          name,
-          description: placeholderToolDescription(name, v2Fingerprint),
-          parameters: placeholderToolParameters(name, v2Fingerprint),
-        },
-      })),
+      ...missing.map((name) =>
+        buildFreeTierTool(name, requestFormat, v2Fingerprint, useOfficialSchemas)
+      ),
     ];
     return next as T;
   }
@@ -516,15 +420,22 @@ export function prepareFreeTierRequest<T>(
     if (isTrackable(origin)) forgetAttempt(origin);
     return { body, attempt: null };
   }
-  const eligible = isTrackable(origin) && clientToolNames.length === 0;
+  const inferenceProvider = surface === "zen-inference" && provider === "opencode";
+  const eligible = !inferenceProvider && isTrackable(origin) && clientToolNames.length === 0;
   const key = eligible ? shapeKeyOf(provider, model, body) : "";
-  const plan =
-    isTrackable(origin) && eligible
+  const plan = inferenceProvider
+    ? { shape: "tools" as const, probe: false }
+    : isTrackable(origin) && eligible
       ? planShape(origin, key)
       : { shape: "tools" as const, probe: false };
   const chosen = plan.shape;
-  const names = resolvePlaceholderNames(provider, model, session, configuredPlaceholderToolNames());
-  const borrowed = clientToolNames.length === 0 && names.length > 0 && chosen === "tools";
+  const configuredNames = configuredPlaceholderToolNames();
+  const resolvedNames = resolvePlaceholderNames(provider, model, session, configuredNames);
+  const names = inferenceProvider
+    ? [...new Set([...resolvedNames, ...OPENCODE_ZEN_FREE_TOOL_NAMES])]
+    : resolvedNames;
+  const borrowed =
+    !inferenceProvider && clientToolNames.length === 0 && names.length > 0 && chosen === "tools";
   const attempt: FreeTierContractAttempt = {
     provider,
     model,
@@ -542,13 +453,26 @@ export function prepareFreeTierRequest<T>(
       replayNote: (verdict) => noteFreeTierOutcome({ ...attempt, probe: false }, verdict),
     });
   }
-  return {
-    body:
-      chosen === "bare"
-        ? withStreaming(body, v2Fingerprint)
-        : applyFreeTierRequestContract(body, requestFormat, names, v2Fingerprint),
-    attempt,
-  };
+  let preparedBody =
+    chosen === "bare"
+      ? withStreaming(body, v2Fingerprint)
+      : applyFreeTierRequestContract(body, requestFormat, names, v2Fingerprint, inferenceProvider);
+  if (inferenceProvider && requestFormat === "openai") {
+    preparedBody = withUsageReporting(preparedBody);
+  }
+  return { body: preparedBody, attempt };
+}
+
+function withUsageReporting<T>(body: T): T {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
+  const record = body as Record<string, unknown>;
+  const streamOptions =
+    record.stream_options &&
+    typeof record.stream_options === "object" &&
+    !Array.isArray(record.stream_options)
+      ? (record.stream_options as Record<string, unknown>)
+      : {};
+  return { ...record, stream_options: { ...streamOptions, include_usage: true } } as T;
 }
 
 function withStreaming<T>(body: T, v2Fingerprint = false): T {

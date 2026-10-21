@@ -7,6 +7,7 @@ import { hasProviderModelAlias, resolveProviderModelAlias } from "./modelCanonic
 import { resolveActivePrefixedProviderModel } from "./prefixedProviderModel.ts";
 import { logger } from "../utils/logger.ts";
 import { boundedMap } from "../../src/lib/quota/boundedMap.ts";
+import { isOpencodeFreeTierModel } from "../config/opencodeFreeTierModels.ts";
 
 export { resolveProviderAlias };
 export { resolveCanonicalProviderModel } from "./modelCanonicalization.ts";
@@ -492,7 +493,10 @@ function parseModelUncached(modelStr: string | null | undefined): ParsedModel {
     const firstSlash = cleanStr.indexOf("/");
     const providerOrAlias = cleanStr.slice(0, firstSlash).trim();
     const model = cleanStr.slice(firstSlash + 1).trim();
-    const provider = resolveProviderAlias(providerOrAlias);
+    const provider =
+      providerOrAlias === "opencode" && isOpencodeFreeTierModel(model, "opencode")
+        ? "opencode"
+        : resolveProviderAlias(providerOrAlias);
     return { provider, model, isAlias: false, providerAlias: providerOrAlias, extendedContext };
   }
 

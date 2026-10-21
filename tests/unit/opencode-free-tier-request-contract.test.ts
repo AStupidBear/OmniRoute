@@ -56,6 +56,8 @@ import {
   satisfiesOpencodeUserAgentContract,
 } from "../../open-sse/utils/opencodeHeaders.ts";
 import { OpencodeExecutor } from "../../open-sse/executors/opencode.ts";
+import { opencodeProvider } from "../../open-sse/config/providers/registry/opencode/index.ts";
+import opencodeZenTools from "../../open-sse/executors/opencodeZenTools.json";
 
 /**
  * The free tier validates the session *value* (the 12-hex time part must decode to the
@@ -93,6 +95,7 @@ test("the contract applies to free-tier models on the gated surface only", () =>
   // contract — including for a free model.
   assert.equal(requiresFreeTierRequestContract("go", "opencode-go", "big-pickle"), false);
   assert.equal(requiresFreeTierRequestContract("go", "opencode-go", "ox-alpha-free"), false);
+  assert.equal(requiresFreeTierRequestContract("zen-inference", "opencode", "big-pickle"), true);
   assert.equal(requiresFreeTierRequestContract("other", "groq", "big-pickle"), false);
 });
 
@@ -114,9 +117,77 @@ test("with the synced catalog pinned, only its ids count as free", () => {
 
 test("the surface is told apart by base url, so the `oc` alias needs no special case", () => {
   assert.equal(surfaceFromBaseUrl("https://opencode.ai/zen/v1"), "zen");
+  assert.equal(surfaceFromBaseUrl("https://opencode.ai/inference/v1"), "zen-inference");
   assert.equal(surfaceFromBaseUrl("https://opencode.ai/zen/go/v1"), "go");
   assert.equal(surfaceFromBaseUrl("https://api.groq.com/openai/v1"), "other");
   assert.equal(surfaceFromBaseUrl(undefined), "other");
+});
+
+test("the public OpenCode provider uses model-aware inference routing", () => {
+  assert.equal(opencodeProvider.baseUrl, "https://opencode.ai/inference/v1");
+  assert.equal(opencodeProvider.modelsUrl, "https://opencode.ai/inference/v1/models");
+  _setOpencodeFreeModelsForTests(["big-pickle"]);
+  try {
+    const executor = new OpencodeExecutor("opencode");
+    assert.equal(
+      executor.buildUrl("big-pickle", true),
+      "https://opencode.ai/inference/v1/chat/completions"
+    );
+    assert.equal(isPremiumOpencodeModel("gpt-5.4", "opencode"), true);
+  } finally {
+    _setOpencodeFreeModelsForTests(null);
+  }
+});
+
+test("keyless inference requests use OpenCode identity headers and the LiteLLM request shape", () => {
+  const previousTools = process.env.OPENCODE_FREE_TIER_PLACEHOLDER_TOOLS;
+  const previousContract = process.env.OPENCODE_FREE_TIER_REQUEST_CONTRACT;
+  process.env.OPENCODE_FREE_TIER_PLACEHOLDER_TOOLS = "";
+  process.env.OPENCODE_FREE_TIER_REQUEST_CONTRACT = "on";
+  _resetToolObservationForTests();
+  _setOpencodeFreeModelsForTests(["big-pickle"]);
+
+  try {
+    const prepared = prepareFreeTierRequest(
+      { ...CHAT_BODY(), model: "big-pickle" },
+      "openai",
+      "zen-inference",
+      "opencode",
+      "big-pickle"
+    );
+    const body = prepared.body as Record<string, unknown>;
+    const tools = body.tools as Array<{ function: { name: string; parameters: unknown } }>;
+    assert.equal(body.stream, true);
+    assert.deepEqual(body.stream_options, { include_usage: true });
+    assert.deepEqual(tools.map((tool) => tool.function.name).sort(), [
+      "edit",
+      "glob",
+      "grep",
+      "read",
+      "shell",
+    ]);
+    assert.deepEqual(
+      tools.find((tool) => tool.function.name === "shell")?.function.parameters,
+      opencodeZenTools.shell.parameters
+    );
+    assert.equal(prepared.attempt?.borrowed, false);
+
+    const executor = new OpencodeExecutor("opencode");
+    const headers = executor.buildHeaders(null, false, null, "big-pickle", undefined, body);
+    assert.equal(headers.Authorization, "Bearer public");
+    assert.equal(headers["x-opencode-client"], "cli");
+    assert.match(headers["x-opencode-project"], /^[0-9a-f]{40}$/);
+    assert.equal(headers["x-opencode-session"], headers["x-session-affinity"]);
+
+    const premiumHeaders = executor.buildHeaders(null, true, null, "gpt-5.4");
+    assert.equal(premiumHeaders.Authorization, undefined);
+  } finally {
+    _setOpencodeFreeModelsForTests(null);
+    if (previousTools === undefined) delete process.env.OPENCODE_FREE_TIER_PLACEHOLDER_TOOLS;
+    else process.env.OPENCODE_FREE_TIER_PLACEHOLDER_TOOLS = previousTools;
+    if (previousContract === undefined) delete process.env.OPENCODE_FREE_TIER_REQUEST_CONTRACT;
+    else process.env.OPENCODE_FREE_TIER_REQUEST_CONTRACT = previousContract;
+  }
 });
 
 test("chat completions: the contract adds streaming and a placeholder tool, and no tool_choice", () => {

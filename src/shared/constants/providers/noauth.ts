@@ -21,6 +21,24 @@ export const NOAUTH_PROVIDERS = {
       text: "This provider accepts only the official Devin CLI over local ACP stdio and never falls back to another provider.",
     },
   },
+  opencode: {
+    id: "opencode",
+    alias: "oc",
+    name: "OpenCode Free",
+    icon: "opencode",
+    color: "#E87040",
+    textIcon: "OC",
+    website: "https://opencode.ai",
+    noAuth: true,
+    hasFree: true,
+    serviceKinds: ["llm"],
+    authHint: "No API key required. Requests use OpenCode's public inference endpoint.",
+    freeNote:
+      "Free models from OpenCode's public inference catalog. Model availability and request limits are controlled by OpenCode.",
+    notice: {
+      text: "OpenCode Free uses https://opencode.ai/inference/v1 and requires the OpenCode CLI request identity. No API key is required.",
+    },
+  },
   "duckduckgo-web": {
     id: "duckduckgo-web",
     alias: "ddgw",
@@ -186,7 +204,7 @@ export const NOAUTH_PROVIDERS = {
 // upstream path runs through OmniRoute's proxy-aware global fetch. Providers
 // with browser, WebSocket, direct dispatcher, media, or local CLI paths stay
 // hidden until those paths can guarantee the configured provider proxy.
-export const NOAUTH_PROVIDER_PROXY_SUPPORTED = new Set<string>();
+export const NOAUTH_PROVIDER_PROXY_SUPPORTED = new Set(["opencode"]);
 
 export function supportsNoAuthProviderProxy(providerId: string): boolean {
   return NOAUTH_PROVIDER_PROXY_SUPPORTED.has(providerId);

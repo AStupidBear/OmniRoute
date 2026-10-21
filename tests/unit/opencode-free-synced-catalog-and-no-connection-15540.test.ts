@@ -31,14 +31,13 @@ test.after(async () => {
   fs.rmSync(TEST_DATA_DIR, { recursive: true, force: true });
 });
 
-test("retired OpenCode Free never resolves synthetic credentials with a forced noauth pin", async () => {
-  assert.equal(Object.hasOwn(NOAUTH_PROVIDERS, "opencode"), false);
-  for (const allowed of [null, [] as string[], ["noauth"]]) {
-    const creds = await auth.getProviderCredentials("opencode", null, allowed, "big-pickle", {
-      forcedConnectionId: "noauth",
-    });
-    assert.equal(creds, null, `allowed=${JSON.stringify(allowed)}: Free must remain retired`);
-  }
+test("private OpenCode Free resolves its synthetic no-auth connection", async () => {
+  assert.equal(NOAUTH_PROVIDERS.opencode.noAuth, true);
+  const creds = await auth.getProviderCredentials("opencode", null, ["noauth"], "big-pickle", {
+    forcedConnectionId: "noauth",
+  });
+  assert.equal(creds?.authType, "none");
+  assert.equal(creds?.connectionId, "noauth");
 });
 
 test("authenticated Zen retains live-catalog scoping when one model was synced", async () => {
@@ -54,22 +53,15 @@ test("authenticated Zen retains live-catalog scoping when one model was synced",
     { id: "big-pickle", name: "Big Pickle", source: "imported" },
   ]);
 
-  // The long user alias still resolves to authenticated Zen; retired oc does not.
-  for (const prefix of ["opencode-zen", "opencode"]) {
-    const synced = await getModelInfo(`${prefix}/big-pickle`);
-    assert.equal(
-      synced.errorType,
-      undefined,
-      `control (synced model, ${prefix}/) failed: ${synced.errorMessage}`
-    );
+  const synced = await getModelInfo("opencode-zen/big-pickle");
+  assert.equal(synced.errorType, undefined, `synced Zen model failed: ${synced.errorMessage}`);
 
-    for (const id of ["muse-spark-1.2", "deepseek-v4-flash-free", "north-mini-code-free"]) {
-      const info = await getModelInfo(`${prefix}/${id}`);
-      assert.equal(
-        info.errorType,
-        "model_not_found",
-        `${prefix}/${id} must respect the authenticated connection live catalog`
-      );
-    }
+  for (const id of ["muse-spark-1.2", "deepseek-v4-flash-free", "north-mini-code-free"]) {
+    const info = await getModelInfo(`opencode-zen/${id}`);
+    assert.equal(
+      info.errorType,
+      "model_not_found",
+      `opencode-zen/${id} must respect the authenticated connection live catalog`
+    );
   }
 });

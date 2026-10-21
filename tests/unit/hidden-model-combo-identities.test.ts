@@ -133,8 +133,7 @@ test("combo visibility refreshes after unhide instead of reusing another invocat
 });
 
 test("opencode-zen hidden state is keyed by its own provider id", async () => {
-  // OpenCode Free (`opencode`, alias `oc`) was removed and `opencode` now resolves
-  // to opencode-zen; migration 207 drops overrides stored under the removed id.
+  // The private free provider and authenticated Zen provider retain separate overrides.
   const visible = await dispatch(["opencode-zen/shared-model"]);
   assert.equal(visible.response.status, 200);
   assert.deepEqual(visible.calls, ["opencode-zen/shared-model"]);

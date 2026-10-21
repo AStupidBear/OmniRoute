@@ -7,22 +7,21 @@ import {
   buildManualComboModelStep,
 } from "../../src/lib/combos/builderDraft.ts";
 import { resolveProviderAlias, parseModel } from "../../open-sse/services/model.ts";
+import { _setOpencodeFreeModelsForTests } from "../../open-sse/config/opencodeFreeTierModels.ts";
 
-// Issue #11433: the combo builder's precision-select path builds a step's
-// `model` string as `${providerId}/${modelId}` using the CANONICAL provider id.
-// For the keyless "opencode" (OpenCode Free) provider this produced
-// `model: "opencode/<modelId>"`, but `opencode` is ALSO a manual routing-prefix
-// override (`ALIAS_TO_PROVIDER_ID["opencode"] = "opencode-zen"`), so the step
-// parsed back to a DIFFERENT provider. That provider was removed
-// (docs/reference/REMOVED_PROVIDERS.md); the routing-prefix override path is
-// still exercised here through another no-auth provider whose alias differs
-// from its id (uncloseai / unc).
+// Issue #11433: combo entries preserve the configured provider's public alias.
+// The `opencode/` prefix routes free models to OpenCode's public inference
+// provider while premium models continue to resolve to OpenCode Zen.
 
-test('sanity: resolveProviderAlias("opencode") is the manual override causing the collision', () => {
-  // Documents the root cause directly: the manual alias override in
-  // open-sse/services/model.ts unconditionally rewrites "opencode" to
-  // "opencode-zen".
-  assert.equal(resolveProviderAlias("opencode"), "opencode-zen");
+test('resolveProviderAlias("opencode") retains the explicit Zen gateway mapping', () => {
+  _setOpencodeFreeModelsForTests(["big-pickle"]);
+  try {
+    assert.equal(resolveProviderAlias("opencode"), "opencode-zen");
+    assert.equal(parseModel("opencode/big-pickle").provider, "opencode");
+    assert.equal(parseModel("opencode/gpt-5.4").provider, "opencode-zen");
+  } finally {
+    _setOpencodeFreeModelsForTests(null);
+  }
 });
 
 test("issue #11433 fix: buildPrecisionComboModelStep honors an explicit modelPrefix override", () => {

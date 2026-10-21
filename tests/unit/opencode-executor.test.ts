@@ -72,9 +72,9 @@ describe("OpencodeExecutor", () => {
   });
 
   describe("execute", () => {
-    it('resolves "opencode" executor alias to opencode-zen config', async () => {
-      const aliasExecutor = new OpencodeExecutor("opencode-zen");
-      const result = await aliasExecutor.execute(createInput("deepseek-v4-flash-free"));
+    it("routes the public opencode executor to the inference API", async () => {
+      const publicExecutor = new OpencodeExecutor("opencode");
+      const result = await publicExecutor.execute(createInput("big-pickle", true, null));
       assert.equal(result.url, "https://opencode.ai/inference/v1/chat/completions");
       assert.equal(fetchCalls[0].url, "https://opencode.ai/inference/v1/chat/completions");
     });

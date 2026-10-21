@@ -128,6 +128,8 @@ test("flag on: a model published with @ai-sdk/openai resolves to /responses", ()
   assert.equal(surfaceTargetFormatForNpm("@ai-sdk/openai"), "openai-responses");
   assert.equal(getModelTargetFormat("opencode-zen", "respond-model"), "openai-responses");
   assert.equal(resolveOpencodeTargetFormat("opencode-zen", "respond-model"), "openai-responses");
+  assert.equal(getPublishedModelNpm("opencode", "respond-model"), "@ai-sdk/openai");
+  assert.equal(resolveOpencodeTargetFormat("opencode", "respond-model"), "openai-responses");
   assert.equal(resolveOpencodeTargetFormat("opencode-go", "respond-model"), "openai-responses");
 });
 
@@ -175,10 +177,10 @@ test("flag on: a silent catalog, no npm, or an unmeasured SDK keeps the registry
   );
 });
 
-test("flag on: providers outside Zen/Go (incl. the removed keyless opencode/oc) never read it", () => {
+test("flag on: unrelated providers never read the OpenCode catalog", () => {
   process.env[FLAG] = "true";
   configurePublishedCatalogForTests(catalogWithEntries());
-  for (const provider of ["opencode", "oc", "openai", "github"]) {
+  for (const provider of ["oc", "openai", "github"]) {
     assert.equal(getPublishedModelNpm(provider, "respond-model"), undefined, provider);
   }
 });

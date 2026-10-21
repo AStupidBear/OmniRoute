@@ -1,4 +1,4 @@
-// Keep raw-key persistence isolated; paid OpenCode no longer hydrates retired Free overrides.
+// Keep private OpenCode Free overrides isolated from the authenticated Zen provider.
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -34,8 +34,8 @@ test("#7620: isHidden override written under raw 'opencode' stays on the raw key
   );
 });
 
-test("getNoAuthHydrationProviderIds never hydrates the retired OpenCode Free sibling", () => {
-  // Paid providers hydrate only their own overrides after Free retirement.
+test("OpenCode provider overrides stay scoped to their own registry ids", () => {
+  // Authenticated providers do not hydrate the no-auth provider's overrides.
   assert.deepEqual(getNoAuthHydrationProviderIds("opencode-zen"), ["opencode-zen"]);
   assert.deepEqual(getNoAuthHydrationProviderIds("opencode-go"), ["opencode-go"]);
   // A provider with no siblings resolves to just itself (requested id first).
@@ -58,7 +58,7 @@ test("getNoAuthHydrationProviderIds never hydrates the retired OpenCode Free sib
   assert.equal(raw?.targetFormat, "claude");
 });
 
-test("getModelInfo('opencode/<model>') still resolves to authenticated Zen and its own overrides", async () => {
+test("a premium opencode/<model> keeps the authenticated Zen route and its own overrides", async () => {
   mergeModelCompatOverride("opencode-zen", "claude-opus-5", {
     apiFormat: "responses",
     targetFormat: "claude",

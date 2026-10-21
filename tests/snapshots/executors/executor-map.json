@@ -490,6 +490,11 @@
       "configSource": "oneminai",
       "provider": "oneminai"
     },
+    "opencode": {
+      "className": "OpencodeExecutor",
+      "configSource": "opencode",
+      "provider": "opencode"
+    },
     "opencode-go": {
       "className": "OpencodeExecutor",
       "configSource": "opencode-go",

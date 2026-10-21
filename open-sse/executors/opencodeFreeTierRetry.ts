@@ -124,7 +124,8 @@ export async function retryFreeTierRefusalWithObservedTools(
     model,
     ctx.clientSession,
     configured,
-    ctx.v2Fingerprint === true
+    ctx.v2Fingerprint === true,
+    ctx.provider === "opencode"
   );
   if (merged === input.body) return null;
   if (addsNothingBeyondFirstDispatch(ctx, model, configured, merged)) return null;

@@ -5,9 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 
-// 207_remove_opencode_free_provider reads api_key / access_token / refresh_token / id_token /
-// provider_specific_data. A provider_connections table that predates those core.ts columns
-// used to abort the whole migration run with "no such column: api_key".
+// The private migration 207 is intentionally a no-op. This legacy-schema fixture
+// ensures the migration history still advances when credential columns are added
+// during the same database upgrade.
 
 const TEST_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "omniroute-mig207-legacy-"));
 process.env.DATA_DIR = TEST_DATA_DIR;
@@ -57,7 +57,7 @@ test.after(() => {
   fs.rmSync(TEST_DATA_DIR, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
-test("migration 207 applies on a provider_connections table without the credential columns", () => {
+test("migration 207 applies on a legacy provider_connections table", () => {
   const db = core.getDbInstance();
 
   const applied = db
@@ -79,5 +79,9 @@ test("migration 207 applies on a provider_connections table without the credenti
       provider: string;
     }>
   ).map((row) => row.provider);
-  assert.deepEqual(providers, ["openai"], "keyless OpenCode Free rows are dropped, others kept");
+  assert.deepEqual(
+    providers,
+    ["oc", "openai", "opencode"],
+    "private OpenCode Free connection rows are preserved"
+  );
 });

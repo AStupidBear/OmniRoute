@@ -188,7 +188,7 @@ test("A14: honorsRuleLockScope allowlist is agentrouter + opencode family", asyn
   const { honorsRuleLockScope } = await import("../../open-sse/config/providerErrorRules.ts");
   assert.equal(honorsRuleLockScope("agentrouter"), true);
   assert.equal(honorsRuleLockScope("AgentRouter"), true);
-  // The keyless `opencode` provider was removed (docs/reference/REMOVED_PROVIDERS.md).
+  // OpenCode Free uses the synthetic no-auth account and stays outside account rule locks.
   assert.equal(honorsRuleLockScope("opencode"), false);
   assert.equal(honorsRuleLockScope("opencode-zen"), true);
   assert.equal(honorsRuleLockScope("opencode-go"), true);

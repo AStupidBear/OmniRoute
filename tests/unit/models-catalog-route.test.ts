@@ -1618,10 +1618,14 @@ test("v1 models catalog includes noAuth provider models when no DB connections e
     ids.some((id) => id.startsWith("unc/")),
     `Expected at least one unc/* model in /v1/models but got none. IDs sample: ${ids.slice(0, 10).join(", ")}`
   );
-  assert.equal(
+  assert.ok(
     ids.some((id) => id.startsWith("oc/")),
+    "OpenCode Free models use the oc/ alias"
+  );
+  assert.equal(
+    ids.some((id) => id.startsWith("opencode/")),
     false,
-    "the removed keyless OpenCode provider must not publish oc/* models"
+    "the no-auth catalog advertises OpenCode models under its canonical oc/ alias"
   );
 });
 

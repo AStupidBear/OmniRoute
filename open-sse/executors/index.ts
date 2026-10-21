@@ -73,6 +73,7 @@ const lazyExecutors: Record<string, () => Promise<BaseExecutor>> = {
   cf: () => import("./cloudflare-ai.ts").then((m) => new m.CloudflareAIExecutor()), // Alias
   freebuff: () => import("./freebuff.ts").then((m) => new m.FreebuffExecutor()),
   fb: () => import("./freebuff.ts").then((m) => new m.FreebuffExecutor()), // Alias
+  opencode: () => import("./opencode.ts").then((m) => new m.OpencodeExecutor("opencode")),
   "opencode-zen": () => import("./opencode.ts").then((m) => new m.OpencodeExecutor("opencode-zen")),
   "opencode-go": () => import("./opencode.ts").then((m) => new m.OpencodeExecutor("opencode-go")),
   vertex: () => import("./vertex.ts").then((m) => new m.VertexExecutor()),
