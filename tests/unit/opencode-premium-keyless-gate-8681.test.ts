@@ -6,17 +6,21 @@ const { _setOpencodeFreeModelsForTests } =
   await import("../../open-sse/executors/opencodeFreeTierContract.ts");
 
 /**
- * The free set is now derived from the synced catalog (available ∩ models.dev cost 0 ∧
- * not deprecated), which a unit test has no DB to populate. Pin it through the seam the
- * way discovery would: these are the ids the live `/zen/v1/models` catalog serves free.
+ * Pin the live `/inference/v1/models` free entries through the same seam used by catalog
+ * discovery. OpenCode's models.dev pricing data can be absent even while its model list is
+ * synced, so these explicit free-tier identifiers remain valid catalog evidence.
  */
 const FREE_MODELS = [
+  "beam-free",
   "big-pickle",
-  "deepseek-v4-flash-free",
-  "mimo-v2.5-free",
-  "nemotron-3-ultra-free",
-  "north-mini-code-free",
-  "hy3-free",
+  "deepseek-v4.1-flash-free",
+  "glm-5.3-flash-free",
+  "jev-1.13-free",
+  "longcat-2.5-preview-free",
+  "mimo-v2.6-flash-free",
+  "minimax-m3.1-flash-free",
+  "nemotron-3.5-lightning-free",
+  "nemotron-3.5-super-vl-free",
 ] as const;
 
 function createInput(model, stream = true, credentials = null) {
@@ -57,27 +61,26 @@ describe("OpencodeExecutor — premium model keyless gate (#8681)", () => {
     before(() => _setOpencodeFreeModelsForTests(FREE_MODELS));
     after(() => _setOpencodeFreeModelsForTests(null));
 
-    it("returns false for the ids the synced catalog serves free on opencode-zen", () => {
-      assert.equal(OpencodeExecutor.isPremiumModel("big-pickle", "opencode-zen"), false);
-      assert.equal(
-        OpencodeExecutor.isPremiumModel("deepseek-v4-flash-free", "opencode-zen"),
-        false
-      );
-      assert.equal(OpencodeExecutor.isPremiumModel("mimo-v2.5-free", "opencode-zen"), false);
+    it("returns false for the ids the OpenCode inference catalog serves free", () => {
+      for (const model of FREE_MODELS) {
+        assert.equal(OpencodeExecutor.isPremiumModel(model, "opencode"), false, model);
+      }
     });
 
-    it("returns false for free models regardless of the -free suffix", () => {
-      // `big-pickle` is free without a suffix; the classification comes from the catalog,
-      // not the model name.
-      assert.equal(OpencodeExecutor.isPremiumModel("big-pickle", "opencode-zen"), false);
-      assert.equal(OpencodeExecutor.isPremiumModel("nemotron-3-ultra-free", "opencode-zen"), false);
-      assert.equal(OpencodeExecutor.isPremiumModel("north-mini-code-free", "opencode-zen"), false);
-      assert.equal(OpencodeExecutor.isPremiumModel("hy3-free", "opencode-zen"), false);
+    it("returns false for the catalog's explicit free-tier ids", () => {
+      // `big-pickle` is free without a suffix; all other free entries are present in the
+      // live catalogue before the `-free` suffix is used as evidence.
+      assert.equal(OpencodeExecutor.isPremiumModel("big-pickle", "opencode"), false);
+      assert.equal(
+        OpencodeExecutor.isPremiumModel("nemotron-3.5-lightning-free", "opencode"),
+        false
+      );
+      assert.equal(OpencodeExecutor.isPremiumModel("longcat-2.5-preview-free", "opencode"), false);
+      assert.equal(OpencodeExecutor.isPremiumModel("glm-5.3-flash-free", "opencode"), false);
     });
 
     it("treats an unlisted free-suffixed model as premium when the catalog omits it", () => {
-      // No suffix rule anymore: a `-free` id absent from the synced catalog is premium
-      // (the upstream delisted it — the failure the old static table caused).
+      // A suffix alone is insufficient: the model must appear in the synced catalog.
       assert.equal(
         OpencodeExecutor.isPremiumModel("some-delisted-model-free", "opencode-zen"),
         true
@@ -97,15 +100,18 @@ describe("OpencodeExecutor — premium model keyless gate (#8681)", () => {
       assert.equal(OpencodeExecutor.isPremiumModel("deepseek-v4-pro", "opencode-go"), true);
       assert.equal(OpencodeExecutor.isPremiumModel("kimi-k2.7-code", "opencode-go"), true);
       assert.equal(OpencodeExecutor.isPremiumModel("glm-5.2", "opencode-go"), true);
-      assert.equal(OpencodeExecutor.isPremiumModel("deepseek-v4-flash-free", "opencode-go"), true);
+      assert.equal(
+        OpencodeExecutor.isPremiumModel("deepseek-v4.1-flash-free", "opencode-go"),
+        true
+      );
       assert.equal(OpencodeExecutor.isPremiumModel("big-pickle", "opencode-go"), true);
       assert.equal(OpencodeExecutor.isPremiumModel("mimo-v2.5-free", "opencode-go"), true);
     });
 
     it("returns false for free models on the opencode (noauth) provider", () => {
-      assert.equal(OpencodeExecutor.isPremiumModel("deepseek-v4-flash-free", "opencode"), false);
       assert.equal(OpencodeExecutor.isPremiumModel("big-pickle", "opencode"), false);
-      assert.equal(OpencodeExecutor.isPremiumModel("hy3-free", "opencode"), false);
+      assert.equal(OpencodeExecutor.isPremiumModel("deepseek-v4.1-flash-free", "opencode"), false);
+      assert.equal(OpencodeExecutor.isPremiumModel("glm-5.3-flash-free", "opencode"), false);
     });
 
     it("returns true for premium models on the opencode (noauth) provider", () => {
@@ -145,9 +151,9 @@ describe("OpencodeExecutor — premium model keyless gate (#8681)", () => {
       assert.equal(response.status, 402);
     });
 
-    it("allows free model deepseek-v4-flash-free with keyless credentials", async () => {
+    it("allows free model deepseek-v4.1-flash-free with keyless credentials", async () => {
       // Should reach the upstream fetch (mock returns 200)
-      const result = await zenExecutor.execute(createInput("deepseek-v4-flash-free", true, null));
+      const result = await zenExecutor.execute(createInput("deepseek-v4.1-flash-free", true, null));
       const response = result instanceof Response ? result : result.response;
       // Should NOT be 402 (the premium gate); should reach the mock fetch
       assert.notEqual(response.status, 402);

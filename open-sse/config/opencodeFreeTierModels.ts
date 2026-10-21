@@ -8,12 +8,16 @@ interface OpencodeFreeCatalog {
 }
 
 const OPENCODE_LEGACY_FREE_MODELS = new Set([
+  "beam-free",
   "big-pickle",
   "deepseek-v4.1-flash-free",
-  "mimo-v2.5-free",
-  "hy3-free",
-  "nemotron-3-ultra-free",
-  "north-mini-code-free",
+  "glm-5.3-flash-free",
+  "jev-1.13-free",
+  "longcat-2.5-preview-free",
+  "mimo-v2.6-flash-free",
+  "minimax-m3.1-flash-free",
+  "nemotron-3.5-lightning-free",
+  "nemotron-3.5-super-vl-free",
 ]);
 const OPENCODE_CATALOG_PROVIDER_IDS = ["opencode-zen", "opencode"] as const;
 
@@ -36,10 +40,15 @@ function deriveFreeIdsFromCatalog(): Set<string> | null {
       const cost =
         pricing[OPENCODE_CATALOG_PROVIDER_IDS[0]]?.[id] ??
         pricing[OPENCODE_CATALOG_PROVIDER_IDS[1]]?.[id];
-      if (!cost || cost.input !== 0 || cost.output !== 0) continue;
       const status = getSyncedCapability(OPENCODE_CATALOG_PROVIDER_IDS[0], id)?.status;
       if (status === "deprecated") continue;
-      free.add(id);
+      if (cost) {
+        if (cost.input === 0 && cost.output === 0) free.add(id);
+        continue;
+      }
+      // OpenCode's live inference catalogue exposes free ids without pricing metadata.
+      // Trust the explicit free-tier naming only for models currently in that catalogue.
+      if (id === "big-pickle" || id.endsWith("-free")) free.add(id);
     }
     return free;
   } catch {
