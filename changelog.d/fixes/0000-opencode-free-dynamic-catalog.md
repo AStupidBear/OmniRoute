@@ -1,0 +1,1 @@
+- **fix(opencode):** OpenCode Free dynamic discovery includes only `big-pickle` and `*-free` models.

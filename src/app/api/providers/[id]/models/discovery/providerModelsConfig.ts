@@ -437,6 +437,11 @@ const KIMI_CODING_MODELS_CONFIG: ProviderModelsConfigEntry = {
 };
 
 const OPENCODE_DISCOVERY_PARSE = (data: any) => data.data || data.models || [];
+const OPENCODE_FREE_DISCOVERY_PARSE = (data: any) =>
+  OPENCODE_DISCOVERY_PARSE(data).filter(
+    (model: any) =>
+      typeof model?.id === "string" && (model.id === "big-pickle" || model.id.endsWith("-free"))
+  );
 
 /**
  * Stable background-identity seed for one connection. Prefers the workspace id
@@ -467,7 +472,10 @@ function readOpencodeBackgroundSeed(connection?: ProviderModelsHeaderContext): s
  * per-workspace/connection fingerprint so background discovery groups under
  * one identity upstream instead of a fresh anonymous client per call.
  */
-function buildOpencodeModelsDiscoveryEntry(url: string): ProviderModelsConfigEntry {
+function buildOpencodeModelsDiscoveryEntry(
+  url: string,
+  parseResponse = OPENCODE_DISCOVERY_PARSE
+): ProviderModelsConfigEntry {
   return {
     url,
     method: "GET",
@@ -477,7 +485,7 @@ function buildOpencodeModelsDiscoveryEntry(url: string): ProviderModelsConfigEnt
       Authorization: `Bearer ${token}`,
       ...buildOpencodeBackgroundHeaders({ seed: readOpencodeBackgroundSeed(connection) }),
     }),
-    parseResponse: OPENCODE_DISCOVERY_PARSE,
+    parseResponse,
   };
 }
 // Also used, behind the XAI_OAUTH_LIVE_MODEL_DISCOVERY flag, to fetch a live
@@ -924,7 +932,10 @@ export const PROVIDER_MODELS_CONFIG: Record<string, ProviderModelsConfigEntry> =
   // OpenCode CLI identity headers on both opencode-family entries (see
   // buildOpencodeModelsDiscoveryEntry above for why — bare "Bun fetch" calls
   // without x-opencode-session are what OpenCode's operator warning names).
-  opencode: buildOpencodeModelsDiscoveryEntry("https://opencode.ai/inference/v1/models"),
+  opencode: buildOpencodeModelsDiscoveryEntry(
+    "https://opencode.ai/inference/v1/models",
+    OPENCODE_FREE_DISCOVERY_PARSE
+  ),
   "opencode-zen": buildOpencodeModelsDiscoveryEntry("https://opencode.ai/zen/v1/models"),
   "opencode-go": buildOpencodeModelsDiscoveryEntry("https://opencode.ai/zen/go/v1/models"),
   "glm-cn": {
