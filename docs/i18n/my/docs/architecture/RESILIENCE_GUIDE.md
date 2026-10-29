@@ -61,156 +61,132 @@ threshold အောက်တွင် provider ကို cooldown အဖြစ�
 
 ## 2. ချိတ်ဆက်မှု Cooldown
 
-**သက်ဆိုင်မှုနယ်ပယ်:** provider ချိတ်ဆက်မှု/အကောင့်/key တစ်ခုချင်း။
+**အကျယ်အဝန်း:** provider connection/account/key တစ်ခုချင်းစီ။
 
-**ရည်ရွယ်ချက်:** တူညီသော provider ၏ အခြားချိတ်ဆက်မှုများ ဆက်လက်ဝန်ဆောင်မှုပေးနေစဉ် မကောင်းသော key တစ်ခုကို ကျော်သွားစေရန်။
+**ရည်ရွယ်ချက်:** တူညီသော provider ၏ အခြား connection များက ဝန်ဆောင်မှု ဆက်လက်ပေးနေစဉ် ညံ့ဖျင်းသော key တစ်ခုကို ကျော်သွားရန်။
 
 **အကောင်အထည်ဖော်မှု:**
 
-- unavailable ဟု မှတ်သားခြင်း: `src/sse/services/auth.ts::markAccountUnavailable()`
-- ရွေးချယ်ခြင်း: တူညီသောဖိုင်အတွင်းရှိ `getProviderCredentials*`
-- Cooldown တွက်ချက်ခြင်း: `open-sse/services/accountFallback.ts::checkFallbackError()`
+- မရနိုင်ဟု မှတ်သားခြင်း: `src/sse/services/auth.ts::markAccountUnavailable()`
+- ရွေးချယ်မှု: တစ်ဖိုင်တည်းအတွင်းရှိ `getProviderCredentials*`
+- Cooldown တွက်ချက်မှု: `open-sse/services/accountFallback.ts::checkFallbackError()`
 - ဆက်တင်များ: `src/lib/resilience/settings.ts`
 
-**ချိတ်ဆက်မှုတစ်ခုလျှင် field များ:**
+**Connection တစ်ခုချင်းစီအတွက် field များ:**
 
-- `rateLimitedUntil` — cooldown သက်တမ်းကုန်ဆုံးသည်အထိ timestamp
+- `rateLimitedUntil` — cooldown ကုန်ဆုံးသည်အထိ timestamp
 - `testStatus: "unavailable"`
-- `lastError`၊ `lastErrorType`၊ `errorCode`
-- `backoffLevel` — exponential backoff ကောင့်တာ
+- `lastError`, `lastErrorType`, `errorCode`
+- `backoffLevel` — exponential backoff ကောင်တာ
 
-**မူလ cooldown များ:**
+**မူရင်းသတ်မှတ် cooldown များ:**
 
 - OAuth အခြေခံ: 5s
 - API-key အခြေခံ: 3s
-- API-key 429: upstream `Retry-After`/reset header များ/ဖတ်ရှုနိုင်သော reset စာသားကို ဦးစားပေးသည်
+- API-key 429: upstream `Retry-After`/reset header များ/ parse လုပ်နိုင်သော reset စာသားကို ဦးစားပေးသည်
 - Backoff: `baseCooldownMs * 2 ** failureIndex`
 
-**Anti-thundering-herd ကာကွယ်စနစ်:** တစ်ပြိုင်နက် ဖြစ်ပေါ်သော ချို့ယွင်းမှုများမှ cooldown ကို လွန်ကဲစွာ ဆန့်တန်းစေခြင်း သို့မဟုတ် `backoffLevel` ကို နှစ်ဆတိုးစေခြင်းကို ကာကွယ်ပေးသည်။
+**Anti-thundering-herd ကာကွယ်မှု:** တစ်ပြိုင်နက်တည်း ဖြစ်ပေါ်သော ပျက်စီးမှုများက cooldown ကို လိုအပ်သည်ထက်ပို၍ ဆန့်တိုးခြင်း သို့မဟုတ် `backoffLevel` ကို နှစ်ဆတိုးစေခြင်းမှ တားဆီးပေးသည်။
 
-**Concurrency-limit 429 များသည် backoff ဆင့်လှေကားကို မတက်ပါ။** Body တွင် concurrency limit
-("too many concurrent requests"၊ "concurrency limit"၊ "parallel request
-limit"၊ GLM `并发数过高`) ကို သတင်းပို့ထားသော `429` ဆိုသည်မှာ အကောင့်သည် ကျန်းမာနေသော်လည်း အလုပ်များနေခြင်းကို ဆိုလိုသည်။
-`checkFallbackError()` က အကြောင်းပြချက် `concurrency_limited` ကို ပြန်ပေးသည်- ချက်ချင်း နောက်ထပ်ချိတ်ဆက်မှုသို့
-failover လုပ်ပါ၊ ဤချိတ်ဆက်မှုကို ပုံသေ `CONCURRENCY_LIMIT_COOLDOWN_MS` (1s) သို့မဟုတ်
-upstream retry အကြံပြုချက်အတိုင်း အေးစေပါ၊ `backoffLevel` ကို မပြောင်းလဲဘဲထားပါ၊ ထို့နောက် `skipProviderBreaker` ကို သတ်မှတ်ပါ။
-ရှင်းလင်းသော quota body က ဆက်လက်အနိုင်ရသောကြောင့် quota pattern နှင့် လည်းကိုက်ညီသော body သည် quota
-ဆုံးဖြတ်ချက်အဖြစ် ဆက်လက်တည်ရှိမည်။ ရှာဖွေတွေ့ရှိမှု- `src/shared/utils/classify429.ts` အတွင်းရှိ `looksLikeConcurrencyLimit()`၊
-ဆုံးဖြတ်ချက်- `open-sse/services/accountFallback/concurrencyLimit429.ts`။ `classify429()` (breaker ၏ `FailureKind`) သည်
-မပြောင်းလဲပါဘဲ ဤ body များအတွက် `rate_limit` ကို ဆက်လက်ဖတ်ရှုသည်။
+**Concurrency-limit 429 များသည် backoff လှေကားကို မတက်ပါ။** Body အတွင်းတွင် concurrency limit ကို သတင်းပို့ထားသော `429` တစ်ခု ("too many concurrent requests", "concurrency limit", "parallel request limit", GLM `并发数过高`) သည် account က ကျန်းမာနေသော်လည်း အလုပ်များနေကြောင်း ဆိုလိုသည်။
+`checkFallbackError()` သည် အကြောင်းပြချက် `concurrency_limited` ကို ပြန်ပေးသည်: ချက်ချင်း နောက်ထပ် connection သို့ failover လုပ်ပါ၊ ဤ connection ကို သတ်မှတ်ထားသော `CONCURRENCY_LIMIT_COOLDOWN_MS` (1s) သို့မဟုတ် upstream retry hint အတိုင်း cooldown ချပါ၊ `backoffLevel` ကို မပြောင်းလဲစေဘဲ ထားပါ၊ ပြီးလျှင် `skipProviderBreaker` ကို သတ်မှတ်ပါ။
+အသားအကျွေး quota body က ဆက်လက် အသာစီးရသဖြင့် quota pattern နှင့်လည်း ကိုက်ညီသော body တစ်ခုသည် quota ဆုံးဖြတ်ချက်အဖြစ် ဆက်ရှိနေမည် ဖြစ်သည်။
+ရှာဖွေတွေ့ရှိချက်: `src/shared/utils/classify429.ts` အတွင်းရှိ `looksLikeConcurrencyLimit()`;
+ဆုံးဖြတ်ချက်: `open-sse/services/accountFallback/concurrencyLimit429.ts`။ `classify429()` (breaker ၏ `FailureKind`) သည် မပြောင်းလဲဘဲရှိနေပြီး ဤ body များအတွက် `rate_limit` ကို ဆက်လက်ဖတ်ရှုသည်။
 
-**Stream content stall များက အကောင့်ကို အေးမစေပါ။** Content-stall watchdog
-(`open-sse/utils/streamHandler.ts`) က သတ်မှတ်ချိန်အတွင်း model output မပေးပို့သော
-stream တစ်ခုကို စွန့်လွှတ်သောအခါ၊ `markAccountUnavailable()` က ချိတ်ဆက်မှုပေါ်တွင် အမှားကို မှတ်သားသော်လည်း
-cooldown ကို မသတ်မှတ်ပါ- ထို stall သည် ထို request ၏ပိုင်ဆိုင်မှုဖြစ်ပြီး၊ မကြာခဏဆိုသလို output မထွက်သေးသည့်
-ရှည်လျားသော reasoning turn ကြောင့်ဖြစ်သည်။ Operator များသည် `resilienceSettings.streamStallCooldown.enabled`
-(မူလ `false`) ဖြင့် ပြန်လည်ရွေးချယ်ပါဝင်နိုင်သည်။
+**Stream content ရပ်တန့်မှုများက account ကို cooldown မချပါ။** Content-stall watchdog
+(`open-sse/utils/streamHandler.ts`) သည် အချိန်မီ model output မပေးပို့သော stream တစ်ခုကို လက်လျှော့သောအခါ၊ `markAccountUnavailable()` သည် error ကို connection ပေါ်တွင် မှတ်သားသော်လည်း cooldown ချမှတ်ခြင်း မပြုပါ: ရပ်တန့်မှုသည် ထို request သာ ပိုင်ဆိုင်ပြီး၊ မကြာခဏဆိုသလို output မထွက်သေးသော reasoning turn ရှည်ကြီးတစ်ခု ဖြစ်လေ့ရှိသည်။ Operator များသည် `resilienceSettings.streamStallCooldown.enabled`
+(မူလတန်ဖိုး `false`) ဖြင့် ပြန်လည်ပါဝင်ရန် ရွေးချယ်နိုင်သည်။
 
-**Reasoning frame များက content-stall ဘတ်ဂျက်ကို ပြန်လည်စတင်စေသည်။** Reasoning model တစ်ခုသည်
-ပထမဆုံး မြင်သာသော token မပေါ်မီ မိနစ်အတော်ကြာအောင် တွေးခေါ်နိုင်သည်- Claude သည် thinking စာသား ဗလာဖြစ်နိုင်သော
-`thinking_delta` frame များကို stream ပေးပို့ပြီး၊ Responses API သည် reasoning item တစ်ခုပြီးတစ်ခု
-stream ပေးပို့သည်။ `isReasoningProgressFrame()` (`open-sse/utils/streamReadiness.ts`) က
-ဤ frame များကို မှတ်သားနိုင်ပြီး၊ watchdog သည် turn ကို ပယ်ဖျက်ခြင်းအစား frame တစ်ခုချင်းစီတွင် ၎င်း၏ဘတ်ဂျက်ကို ပြန်လည်စတင်သည်။ ၎င်းတို့သည် model output မဟုတ်ကြပါ၊ ထို့ကြောင့် reasoning ဖြင့်သာ
-ပြီးဆုံးသွားသော turn ကို ဗလာအဖြစ် ဆက်လက်အစီရင်ခံခံရမည်ဖြစ်ပြီး၊ reasoning ရပ်သွားကာ heartbeat များသာ
-ပေးပို့သော turn ကလည်း watchdog ကို ဆက်လက် trigger လုပ်စေမည်။
+**`p2c` account ရွေးချယ်မှုအတွက် opt-in latency signal။** စေလွှတ်လိုက်သော ကြိုးပမ်းမှုတစ်ခုချင်းစီသည် ၎င်း၏ time-to-first-byte နှင့် ရလဒ်ကို connection တစ်ခုချင်းစီ (ထို့ပြင် connection + model တစ်ခုချင်းစီ) အတွက် in-memory rolling window အတွင်း မှတ်သားသည်: 15 မိနစ်အတွင်း နောက်ဆုံး နမူနာ 20 ခု
+(`open-sse/services/connectionLatencyTracker.ts`၊ `src/sse/handlers/chatHelpers.ts` ရှိ `safeLogEvents()` မှ မှတ်သားသည်)။ `resilienceSettings.p2cLatency.weight` သည် `0` ထက် ကျော်လွန်နေသောအခါ
+(အကွာအဝေး 0-20၊ မူလ `0` = ပိတ်)၊ `src/sse/services/auth.ts` ရှိ `compareP2CConnections()` သည် စုံတွဲထဲမှ candidate တစ်ခုချင်းစီသို့ `weight` အထိ အမှတ်များ ပေါင်းထည့်သည်။
+ထို့တစ်ဝက်က ပိုမြန်သော candidate နှင့် အချိုးအစားအဖြစ် latency မှလာပြီး (နှစ်ဆနှေးပါက တစ်ဝက်အပြည့်ရသည်)၊ ကျန်တစ်ဝက်က rolling error rate မှ လာသည်။
+ဤအချက်ကို candidate နှစ်ခုလုံးတွင် နမူနာ အနည်းဆုံး 3 ခု ရှိမှသာ အသုံးချသဖြင့် account အသစ်များ ဒဏ်ခတ်ခြင်းခံရခြင်း မရှိပါ၊ ၎င်း၏ အမြင့်ဆုံးအဆင့်ကလည်း quota-blocked နှင့် quota-exhausted ဒဏ်ပေးမှုများ အောက်၌ ဆက်လက်ရှိနေသည်။ ၎င်းက မိမိပိုင် circuit ကို မထည့်သွင်းပါ: ပျက်စီးနေသော account များကို cooldown, lockout နှင့် breaker အလွှာများက ဆက်လက် ကိုင်တွယ်သည်။ `PATCH /api/resilience` `{ "p2cLatency": { "weight": 10 } }` ဖြင့် သတ်မှတ်ပါ။
 
-Signature ဗလာမဟုတ်သော Kiro ၏ binary `reasoningContentEvent` frame များသည် ဤ
-reasoning လှုပ်ရှားမှုကို executor မှတဆင့် ဗလာ `reasoning_content` delta အဖြစ် ထိန်းသိမ်းပေးသည်။ Signature ကို
-forward မလုပ်ပါ။ Metadata၊ မပြည့်စုံသော frame များနှင့် ဗလာ signature များက content ဘတ်ဂျက်ကို ပြန်စတင်မစေပါ၊
-သီးခြားလုံး active-stream timeout နှင့် client cancellation က ဆက်လက်သက်ဝင်သည်
-(`open-sse/executors/kiro/reasoning.ts`)။
+**Reasoning frame များက content-stall budget ကို ပြန်လည်စတင်စေသည်။** Reasoning model တစ်ခုသည် ၎င်း၏ ပထမဆုံး မြင်ရသော token မတိုင်မီ မိနစ်များစွာ တွေးဆနိုင်သည်: Claude သည် thinking text ဗလာဖြစ်နိုင်သော `thinking_delta` frame များကို stream လုပ်ပြီး၊ Responses API သည် reasoning item တစ်ခုပြီးတစ်ခု stream လုပ်သည်။
+`isReasoningProgressFrame()` (`open-sse/utils/streamReadiness.ts`) သည်
+ဤ frame များကို အသိအမှတ်ပြုပြီး၊ watchdog သည် turn ကို ဖျက်သိမ်းခြင်းအစား frame တစ်ခုချင်းစီတွင် ၎င်း၏ budget ကို ပြန်လည်စတင်သည်။
+၎င်းတို့သည် model output မဟုတ်ကြသေးသဖြင့် reasoning ဖြင့်သာ ပြီးဆုံးသွားသော turn တစ်ခုကို ဗလာအဖြစ် ဆက်လက်အစီရင်ခံပြီး၊ reasoning ရပ်သွားကာ heartbeat များသာ ပေးပို့သော turn ကလည်း watchdog ကို ဆက်လက်လှုံ့ဆော်စေသည်။
 
-**Terminal အခြေအနေများ (cooldown မဟုတ်ပါ):**
+ဗလာမဟုတ်သော signature ပါရှိသော Kiro ၏ binary `reasoningContentEvent` frame များသည် ဤ reasoning လှုပ်ရှားမှုကို executor မှတစ်ဆင့် ဗလာ `reasoning_content` delta အဖြစ် ထိန်းသိမ်းပေးသည်။ Signature ကို forward မလုပ်ပါ။ Metadata, မပြည့်စုံသော frame များနှင့် ဗလာ signature များက content budget ကို ပြန်လည်စတင်စေခြင်း မပြုပါ; သီးခြားဖြစ်သော active-stream timeout နှင့် client cancellation များ ဆက်လက် အသက်ဝင်သည် (`open-sse/executors/kiro/reasoning.ts`)။
 
-- `banned` — ပိတ်ပင်ထားသော keyword / account-ban ရှာဖွေတွေ့ရှိမှုမှ သတ်မှတ်ခြင်း ([BAN_DETECTION](../security/BAN_DETECTION.md) ကြည့်ပါ)၊ နှင့် request တစ်ခုချင်းစီအတွက် တဆက်တည်းသုံးခါသော upstream ငြင်းပယ်မှုများ (`request_rejected`၊ ဥပမာ Anthropic OAuth 403 "Request not allowed" — `open-sse/services/requestRejectedStreak.ts`) မှလည်း သတ်မှတ်ခြင်း၊ ငြင်းပယ်မှုတစ်ကြိမ်တည်းက ချိတ်ဆက်မှုကို cooldown လုပ်ရုံသာဖြစ်သည်
-- `expired` (ကန့်သတ်ထားသော ပြန်လည်ကြိုးစားမှုများပြီးနောက် terminal သို့ ပြောင်းလဲသွားသည် — exponential backoff ဖြင့် `EXPIRED_RETRY_MAX = 3` — ထို့ကြောင့် ယာယီ OAuth အမှားများသည် အကောင့် အမြဲတမ်းပိတ်ခံရခြင်းမပြုမီ ကိုယ်တိုင်ပြန်ကောင်းလာနိုင်သည်)
+**အဆုံးသတ်အခြေအနေများ (cooldown များ မဟုတ်ပေ):**
+
+- `banned` — banned-keyword / account-ban ရှာဖွေတွေ့ရှိမှုမှ သတ်မှတ်ခြင်း ([BAN_DETECTION](../security/BAN_DETECTION.md) ကို ကြည့်ပါ)၊ ထို့ပြင် အဆက်မပြတ် သုံးခါမြောက် upstream per-request ငြင်းပယ်မှုများမှလည်း သတ်မှတ်ခြင်း (`request_rejected`၊ ဥပမာ Anthropic OAuth 403 "Request not allowed" — `open-sse/services/requestRejectedStreak.ts`)؛ တစ်ခါတည်းသော ငြင်းပယ်မှုက connection ကို ခဏ cooldown လုပ်ရုံသာ ဖြစ်သည်
+- `expired` (ကန့်သတ်ထားသော ပြန်လည်ကြိုးစားမှုများ — `EXPIRED_RETRY_MAX = 3` နှင့် exponential backoff — ပြီးနောက် terminal သို့ ပြောင်းရွှေ့သည်၊ ထို့ကြောင့် ခေတ္တ OAuth error များသည် account ကို အပြီးတိုင် ပိတ်ထားခြင်း မပြုမီ မိမိဘာသာ ပြန်ကောင်းလာနိုင်သည်)
 - `credits_exhausted`
 
-ဤအရာများသည် credentials ပြောင်းလဲသွားသည်အထိ သို့မဟုတ် operator တစ်ဦးက reset လုပ်သည်အထိ ဆက်လက်တည်ရှိမည်။ Terminal အခြေအနေများကို ယာယီ cooldown အခြေအနေနှင့် အစားမထိုးပါနှင့်။
+၎င်းတို့သည် credentials ပြောင်းလဲသည်အထိ သို့မဟုတ် operator တစ်ဦးက ပြန်လည်သတ်မှတ်ပေးသည်အထိ ဆက်ရှိနေသည်။ Terminal state များကို ခေတ္တ cooldown state ဖြင့် overwrite မပြုပါ။
 
-**Lazy ပြန်လည်ရရှိမှု:** `rateLimitedUntil` ကျော်လွန်သွားသောအခါ၊ ချိတ်ဆက်မှုသည် ထပ်မံရွေးချယ်ခံရနိုင်သော အခြေအနေရောက်မည်။ အောင်မြင်စွာအသုံးပြုပြီးသောအခါ၊ `clearAccountError()` က error field အားလုံးကို ရှင်းလင်းပေးသည်။
+**Lazy recovery:** `rateLimitedUntil` ကျော်လွန်သွားသောအခါ connection သည် ပြန်လည်အဆင်ပြေဖြစ်လာသည်။ အောင်မြင်စွာ အသုံးပြုပြီးနောက်တိုင်း `clearAccountError()` သည် error field အားလုံးကို ရှင်းလင်းပေးသည်။
 
-### Claude OAuth usage wall: ဦးစားပေးမှုနိမ့့် လမ်းကြောင်း + session-limit reset
+### Claude OAuth အသုံးပြုမှုကန့်သတ်ချက် နံရံ: ဦးစားပေးနိမ့်သော လမ်းကြောင်း + session-limit ပြန်လည်သတ်မှတ်ခြင်း
 
-**သက်ဆိုင်မှုနယ်ပယ်:** Claude subscription (OAuth) ချိတ်ဆက်မှု တစ်ခု။ ဝိသေသလက္ခဏာနှစ်ခုလုံးသည် **ချိတ်ဆက်မှုတစ်ခုချင်း
-opt-in** ဖြစ်သည် (ချိတ်ဆက်မှု ပြင်ဆင်ရန် → Claude ကဏ္ဍ → `providerSpecificData` ထဲရှိ `lowPriorityMode` / `autoLimitReset`၊
-နှစ်ခုလုံး မူလအားဖြင့် ပိတ်ထား) ပြီး Claude Code ၏ `/low-priority` နှင့်
-`/limit-reset` command များကို အတုယူထားသည် (Claude Code 2.1.263 မှ မှတ်သားရယူထားသော wire contract)။
+**အကျယ်အဝန်း:** Claude subscription (OAuth) connection တစ်ခု။ Feature နှစ်ခုလုံးသည် **connection တစ်ခုချင်းစီ opt-in** ဖြစ်သည်
+(Edit connection → Claude section → `providerSpecificData` အတွင်းရှိ `lowPriorityMode` / `autoLimitReset`၊ နှစ်ခုလုံး မူလပိတ်ထား) နှင့် Claude Code ၏ `/low-priority` နှင့်
+`/limit-reset` command များကို ထပ်တူပုံစံချထားသည် (Claude Code 2.1.263 မှ ရယူထားသော wire contract)။
 
 **အကောင်အထည်ဖော်မှု:**
 
-- State machine + တုံ့ပြန်မှုခွဲခြားသတ်မှတ်ခြင်း: `open-sse/services/claudeLowPriority.ts`
-- Reset အခြေအနေ/တောင်းဆိုမှု client: `open-sse/services/claudeLimitReset.ts`
-- Executor hook (header ထိုးသွင်းခြင်း + တူညီသောအကောင့် retry): `open-sse/executors/base.ts::execute()`
-- Opt-in သိမ်းဆည်းမှု: `src/lib/providers/requestDefaults.ts::normalizeProviderSpecificData()`
+- State machine + တုံ့ပြန်မှုအမျိုးအစားခွဲခြားခြင်း: `open-sse/services/claudeLowPriority.ts`
+- Reset အခြေအနေ/claim client: `open-sse/services/claudeLimitReset.ts`
+- Executor hook (header ထိုးသွင်းခြင်း + အကောင့်တူ retry): `open-sse/executors/base.ts::execute()`
+- Opt-in ရွေးချယ်ဖွင့်ထားမှု ဆက်လက်သိမ်းဆည်းခြင်း: `src/lib/providers/requestDefaults.ts::normalizeProviderSpecificData()`
 
-**Trigger:** 5-နာရီ usage wall — header များတွင်
-`anthropic-ratelimit-unified-status: rejected` ပါဝင်ပြီး၊ အကောင့် အရည်အချင်းပြည့်မှီသောအခါ
-`anthropic-ratelimit-unified-slow-offer: treatment` ပါဝင်သော `429` ဖြစ်သည်။ ထို ပထမဆုံး wall
-429 မတိုင်မီ ဘာမှမပို့ပါ၊ unified header များမပါသော burst 429 သည် ပုံမှန် cooldown လမ်းကြောင်းကိုသာ ဖြတ်သန်းသည်။
+**အစပြုချက် (Trigger):** 5 နာရီ အသုံးပြုမှုနံရံ (usage wall) — headers တွင် `anthropic-ratelimit-unified-status: rejected` ပါဝင်ပြီး အကောင့်အရည်အချင်းပြည့်မှီပါက `anthropic-ratelimit-unified-slow-offer: treatment` ပါဝင်သော `429` တစ်ခုဖြစ်သည်။ ထို ပထမဆုံး wall 429 မတိုင်မီ ဘာမျှမပေးပို့ပါ; unified headers မပါသော burst 429 သည် ပုံမှန် cooldown လမ်းကြောင်းကိုသာ ဖြတ်သွားပါသည်။
 
-**ဦးစားပေးမှုနိမ့့် လမ်းကြောင်း** (`lowPriorityMode`):
+**ဦးစားပေးမှုနိမ့်သော လမ်းကြောင်း (lane)** (`lowPriorityMode`):
 
-- wall 429 တွင် executor သည် offer ကို လက်ခံပြီး `anthropic-usage-limit: slow` ဖြင့် **တူညီသော** account ကို ချက်ချင်း retry လုပ်သည်။ lane သည် ကြေညာထားသော `anthropic-ratelimit-unified-reset` (+60s grace) အထိ active ဆက်လက်ရှိနေပြီး ထို window အတွင်းရှိ request တိုင်းတွင် header ပါဝင်သည်။ intercept လုပ်ခံထားရသော 429 သည် `handleChatCore` ဆီသို့ ဘယ်တော့မှ မရောက်ရှိသဖြင့် connection ကို cooldown အတွင်း **မထည့်ပါ** ဘူးနှင့် rotate လုပ်၍ ဖယ်ရှားခြင်းလည်း မခံရပါ။
-- နောက်ပိုင်း response များပေါ်ရှိ `anthropic-ratelimit-unified-slow-status` — `active` / `not_needed` သည် lane ကို ဆက်လက်ထိန်းထားသည်။ `slot_busy` (429) သို့မဟုတ် `529` တစ်ခုသည် server ၏ `anthropic-ratelimit-unified-slow-retry-after` (မူရင်းတန်ဖိုး 20s၊ clamp 5–600s၊ ±30% jitter) ကို စောင့်ဆိုင်းပြီး retry လုပ်သည်၊ `anthropic-ratelimit-unified-slow-max-wait` (မူရင်းတန်ဖိုး 20 မိနစ်၊ clamp 1 မိနစ်–6 နာရီ) ဖြင့် ကန့်သတ်ထားသည် — ထိုအရpswd ကျော်လွန်သွားပါက lane ပြီးဆုံးသွားပြီး 10 မိနစ် cool-off က ပြန်လည်လက်ခံမှုကို တားဆီးသည်။ wait သည် request ၏ကိုယ်ပိုင် upstream-start timeout (`resolveFetchStartTimeout`၊ မူရင်းအားဖြင့် 10 မိနစ်) ၏ ကျန်ရှိချိန်ထဲမှ 5 s margin နုတ်ထားသောပမာဏဖြင့် ထပ်မံကန့်သတ်ခံထားရသည်။ ထို cap မရှိပါက 20 မိနစ် မူရင်း max-wait သည် request ထက် ပိုမိုကြာရှည်သွားပြီး sleep သည် wait အလယ်ခေါင်တွင် abort ခံရမည်ဖြစ်ကာ graceful `max_wait` အဆုံးသတ် + cool-off အစား `TimeoutError` ပေါ်ပေါက်စေလိမ့်မည်။
-- `weekly_limit` / `budget_exhausted` / `off` / `ineligible`၊ 5 နာရီ window rollover၊ သို့မဟုတ် `ineligible` + `anthropic-ratelimit-unified-overage-in-use: true` (paid overage က wall ကို ယခုအခါ လုံး၀ ကာကွယ်ပေးနေသောကြောင့် မည်သည့် status ပေါ်မူတည် `extra_usage` အဖြစ် အဆုံးသတ်စေသည်) တို့သည် lane ကို အဆုံးသတ်စေသည်။ response သည် ထိုနောက် ပုံမှန် cooldown လမ်းကြောင်းသို့ စီးဝင်သွားသည်။ `budget_exhausted` ကို ကြေညာထားသော budget reset (≤ 8 ရက်) အထိ မှတ်သားထားသည်။
-- wall စစ်ဆေးမှုသည် executor ၏ကိုယ်ပိုင် 400-driven intra-attempt retry များ (context editing၊ thinking/effort clamp များ၊ param auto-learn) ပြီးဆုံးနောက်တွင် run သောကြောင့် ထို retry များအနက်မှ တစ်ခုတွင်သာ ပေါ်ပေါက်လာသော wall 429 သည်ပင် cooldown လမ်းကြောင်းသို့ ရောက်ရှိခြင်းမပြုဘဲ intercept ခံရဆဲဖြစ်သည်။
-- State သည် connection တစ်ခုချင်းစီအတွက် in-memory ဖြစ်သည် (restart တစ်ကြိမ်က ပြန်လည်လက်ခံရန်အတွက် နောက်ထပ် wall 429 တစ်ခု ကုန်ကျစေသည်)။
+- wall 429 တွင် executor က ကမ်းလှမ်းချက်ကို လက်ခံပြီး `anthropic-usage-limit: slow` ဖြင့် **တူညီသော** အကောင့်ကို ချက်ချင်း ပြန်လည်ကြိုးစားပါသည်။ ကြေညာထားသော `anthropic-ratelimit-unified-reset` (+60s grace) ရောက်ရှိသည်အထိ lane က active ဖြစ်နေပြီး ထိုကာလအတွင်းမှ request တိုင်းသည် ထို header ကို သယ်ဆောင်ပါသည်။ ကြားဖြတ်ဖမ်းယူထားသော 429 သည် `handleChatCore` သို့ ဘယ်သောအခါမျှ မရောက်ရှိပါ၊ ထို့ကြောင့် connection ကို cooldown ထဲ **မထည့်ပါ** နှင့် လှည့်မရွှေ့ပါ။
+- နောက်ပိုင်း responses များပေါ်ရှိ `anthropic-ratelimit-unified-slow-status`: `active` / `not_needed` သည် lane ကို ဆက်လက်ထိန်းထားပါသည်; `slot_busy` (429) သို့မဟုတ် `529` ဖြစ်ပါက server ၏ `anthropic-ratelimit-unified-slow-retry-after` (မူလ 20s, clamp 5–600s, ±30% jitter) ကို စောင့်ဆိုင်းပြီး retry လုပ်ပါသည် — `anthropic-ratelimit-unified-slow-max-wait` (မူလ 20 မိနစ်, clamp 1 မိနစ်–6 နာရီ) ဖြင့် ကန့်သတ်ထားပါသည် — ၎င်းကို ကျော်လွန်သွားပါက lane ပြီးဆုံးသွားပြီး 10 မိနစ် cool-off က ပြန်လည်လက်ခံမှုကို တားဆီးပါသည်။ စောင့်ဆိုင်းချိန်ကို request ကိုယ်ပိုင် upstream-start timeout (`resolveFetchStartTimeout`၊ မူလ 10 မိနစ်) ၏ ကျန်ရှိနေသေးသော ပမာဏမှ 5 စက္ကန့် margin နှုတ်ထားသည်ဖြင့် ထပ်မံကန့်သတ်ထားပါသည် — ထို cap မရှိပါက 20 မိနစ် မူလ max-wait သည် request ထက်ပို၍ ကြာရှည်သွားမည်ဖြစ်ပြီး sleep သည် စောင့်ဆိုင်းစဉ် အလယ်ခေါင်တွင် ရပ်တန့်သွားကာ သိမ်မွေ့သော `max_wait` အဆုံး + cool-off အစား `TimeoutError` ပေါ်ထွက်လာစေပါလိမ့်မည်။
+- `weekly_limit` / `budget_exhausted` / `off` / `ineligible`၊ 5 နာရီ window rollover၊ သို့မဟုတ် `ineligible` + `anthropic-ratelimit-unified-overage-in-use: true` (ငွေပေးချေထားသော overage က wall ကို ယခုဖုံးအုပ်ပေးနေသောကြောင့် မည်သည့် status ပေါ်တွင်မဆို ၎င်းကို `extra_usage` အဖြစ် အဆုံးသတ်စေသည်) တို့က lane ကို အဆုံးသတ်စေပါသည်; response သည် ထိုအခါ ပုံမှန် cooldown လမ်းကြောင်းသို့ စီးဆင်းသွားပါသည်။ `budget_exhausted` ကို ကြေညာထားသော budget reset (≤ 8 ရက်) ရောက်သည်အထိ မှတ်သားထားပါသည်။
+- wall စစ်ဆေးမှုသည် executor ကိုယ်ပိုင် 400-driven intra-attempt retries (context တည်းဖြတ်ခြင်း၊ thinking/effort clamps၊ param auto-learn) ပြီးနောက်မှ လုပ်ဆောင်ပါသည်၊ ထို့ကြောင့် ထို retry များထဲမှ တစ်ခုတွင်မှ ပေါ်ထွက်လာသော wall 429 သည်ပင် cooldown လမ်းကြောင်းသို့ မရောက်ဘဲ ကြားဖြတ်ဖမ်းယူခံရဆဲ ဖြစ်ပါသည်။
+- State သည် connection တစ်ခုချင်းစီအတွက် memory အတွင်းတွင်သာ ရှိပါသည် (ပြန်လည်စတင်ခြင်း (restart) တစ်ခုသည် ပြန်လည်လက်ခံရန် wall 429 တစ်ခု အပိုကုန်ကျစေပါသည်)။
 
-**Session-limit reset** (`autoLimitReset`၊ နှစ်ခုလုံး ဖွင့်ထားသည့်အခါ lane မတိုင်မီ စမ်းသပ်သည်):
+**Session-limit ပြန်လည်သတ်မှတ်ခြင်း (reset)** (`autoLimitReset`၊ နှစ်ခုလုံး ဖွင့်ထားပါက lane မတိုင်မီ စမ်းသပ်ပါသည်):
 
-- `GET https://api.anthropic.com/api/oauth/usage?at_wall=1&skip_spend=1` → `juniper_tide` block; `arm: "reset"` နှင့် `available: true` ဖြစ်သည့်အခါ `{ "program": "juniper_tide" }` ဖြင့် `POST https://api.anthropic.com/api/organizations/{orgUUID}/reset_rate_limits` (organization UUID သည် `providerSpecificData.organizationUUID` မှ၊ bootstrap fallback)။
-- `result: reset|not_limited` → request ကို အမြန်နှုန်းအပြည့်ဖြင့် retry လုပ်သည် (slow header မပါ)။ `already_used` / `not_offered` သည် `next_available_at` ကို memoise လုပ်သည် (မူရင်းတန်ဖိုး တစ်ပတ်)။ မည်သည့် failure မဆို 15 မိနစ် backoff လုပ်သည်။ reset သည် တစ်ပတ်လျှင် တစ်ကြိမ်ဖြစ်ပြီး weekly limit ထဲသို့ ဆက်လက်ထည့်သွင်းတွက်ချက်ခံရသည်။
+- `GET https://api.anthropic.com/api/oauth/usage?at_wall=1&skip_spend=1` → `juniper_tide` block; `arm: "reset"` နှင့် `available: true` ဖြစ်သောအခါ `{ "program": "juniper_tide" }` ဖြင့် `POST https://api.anthropic.com/api/organizations/{orgUUID}/reset_rate_limits` ကို ပေးပို့ပါသည် (organization UUID သည် `providerSpecificData.organizationUUID` မှ၊ bootstrap fallback)။
+- `result: reset|not_limited` → request ကို အရှိန်အပြည့်ဖြင့် ပြန်လည်ကြိုးစားပါသည် (slow header မပါ)။ `already_used` / `not_offered` သည် `next_available_at` ကို မှတ်သားထားပါသည် (မူလ တစ်ပတ်); မည်သည့်ပျက်ကွက်မှုမဆို ဖြစ်ပါက 15 မိနစ် ဆုတ်ခွာပါသည် (back off)။ Reset သည် တစ်ပတ်လျှင် တစ်ကြိမ်သာဖြစ်ပြီး weekly limit အတွင်းသို့ ဆက်လက်ထည့်တွက်ပါသည်။
 
 Regression guard များ: `tests/unit/claude-low-priority-mode.test.ts`,
-`tests/unit/claude-limit-reset.test.ts`, `tests/unit/claude-low-priority-executor.test.ts`။
+`tests/unit/claude-limit-reset.test.ts`, `tests/unit/claude-low-priority-executor.test.ts`.
 
-### Session affinity (#7274)
+### Session ကပ်ငြိမှု (Session affinity) (#7274)
 
-**အကျုံးဝင်မှု:** client session တစ်ခု (`X-Session-Id` / `x-codex-session-id` / `x-omniroute-session` header) ကို connection တစ်ခုသို့ pin လုပ်ထားခြင်း၊ **မည်သည့်** provider အတွက်မဆို။
+**အကျယ်အဝန်း:** client session တစ်ခု (`X-Session-Id` / `x-codex-session-id` / `x-omniroute-session` header) ကို connection တစ်ခုသို့ pin ချုပ်ထားခြင်း — **မည်သည့်** provider အတွက်မဆို။
 
-**ရည်ရွယ်ချက်:** multi-turn agent တစ်ခု (Claude Code၊ aider၊ custom agent များ) ကို request များစွာအတ င်း တူညီသော account ပေါ်တွင် ဆက်လက်ထားရှိခြင်း၊ per-account session state ရှိသော provider များတွင် account ကြား context ဆုံးရှုံးမှုနှင့် ထပ်တလဲလဲ cold-start 429 များကို လျှော့ချခြင်း။
+**ရည်ရွယ်ချက်:** multi-turn agent (Claude Code, aider, custom agents) တစ်ခုကို requests အများအပြားတလျှောက် အကောင့်တူတစ်ခုပေါ်တွင်ပင် ထားရှိပေးရန် ဖြစ်ပြီး၊ အကောင့်တစ်ခုချင်းစီ session state ရှိသော providers များတွင် အကောင့်ဖြတ်ကျော် context ဆုံးရှုံးမှုနှင့် ထပ်ခါတလဲလဲ ဖြစ်တတ်သော cold-start 429 များကို လျှော့ချပေးပါသည်။
 
 **အကောင်အထည်ဖော်မှု:**
 
-- TTL ဆုံးဖြတ်ချက်: `src/sse/services/sessionAffinityPin.ts::resolveSessionAffinityTtlMs()`
+- TTL ဆုံးဖြတ်ချက်ချခြင်း: `src/sse/services/sessionAffinityPin.ts::resolveSessionAffinityTtlMs()`
 - Pin ရွေးချယ်မှု/ဖန်တီးမှု: `src/sse/services/sessionAffinityPin.ts::selectSessionAffinityConnection()`
-- Header ထုတ်ယူမှု (ယေဘုယျ၊ မည်သည့် provider မဆို): `src/sse/services/auth.ts::extractSessionAffinityKey()`
-- Persist လုပ်ထားသော pin ဇယား: `sessionAccountAffinity` (`src/lib/db/sessionAccountAffinity.ts`)
-- Setting: `sessionAffinityTtlMs` (ms အတွင်း global TTL၊ `0` သည် ပိတ်ခြင်း) — `src/lib/db/settings.ts`။ Codex-only `codexSessionAffinityTtlMs` မှ migration `124_generic_session_affinity_ttl.sql` ဖြင့် အမည်ပြောင်းလဲထားခြင်းဖြစ်ပြီး၊ ၎င်းက ယခင်က configure လုပ်ထားသော Codex TTL မည်သည့်အရာကိုမဆို မူရင်းအသစ်အဖြစ် လွှဲပြောင်းယူဆောင်လာသည်။
+- Header ထုတ်ယူခြင်း (အထွေထွေ၊ မည်သည့် provider မဆို): `src/sse/services/auth.ts::extractSessionAffinityKey()`
+- ရှည်လျားသိမ်းဆည်းထားသော pin ဇယား: `sessionAccountAffinity` (`src/lib/db/sessionAccountAffinity.ts`)
+- Setting: `sessionAffinityTtlMs` (ms တွင်သော global TTL၊ `0` သည် ပိတ်ထားခြင်း) — `src/lib/db/settings.ts`။ migration `124_generic_session_affinity_ttl.sql` ဖြင့် Codex-only `codexSessionAffinityTtlMs` မှ အမည်ပြောင်းထားခြင်းဖြစ်ပြီး၊ ယခင်က configure လုပ်ထားခဲ့သော မည်သည့် Codex TTL မဆို အသစ်သော မူလတန်ဖိုးအဖြစ် လွှဲပြောင်းယူဆောင်ပါသည်။
 
-#7274 မတိုင်ခင် `resolveSessionAffinityTtlMs()` သည် `codex` မဟုတ်သော provider တိုင်းအတွက် `0` သို့ hard-bail လုပ်သောကြောင့် pinning mechanism နှင့် header extraction တို့သည် provider-agnostic ဖြစ်နေပြီဖြစ်သော်လည်း TTL setting (နှင့် session header များ) သည် အခြားနေရာများတွင် အကျိုးသက်ရောက်မှုမရှိခဲ့ပါ။ ထို fix က early-return ကို ဖယ်ရှားလိုက်သည်။ TTL သည် ယခု `0` ထက် မြင့်မားစွာ global ဖြင့် သတ်မှတ်ပြီးနောက်တွင် provider တိုင်းသို့ ညီညွတ်စွာ သက်ရောက်သည်။
+#7274 မတိုင်မီက `resolveSessionAffinityTtlMs()` သည် `codex` လွဲ၍ ကျန် provider အားလုံးအတွက် `0` သို့ ခိုင်မာစွာ ရပ်ထွက်သွားခဲ့သဖြင့် (hard-bail)၊ pinning ယန္တရားနှင့် header ထုတ်ယူခြင်းသည် provider-agnostic ဖြစ်နေပြီဖြစ်သော်လည်း TTL setting (နှင့် session headers) သည် အခြားနေရာများ၌ ဘာသက်ရောက်မှုမျှ မရှိခဲ့ပါ။ ထို ပြင်ဆင်ချက်က ထို early-return ကို ဖယ်ရှားလိုက်ပါသည်; TTL ကို `0` ထက်ကျော်၍ global အနေဖြင့် သတ်မှတ်ပြီးပါက ယခုအခါ provider တိုင်းသို့ ညီညွတ်စွာ သက်ရောက်စေပါသည်။
 
-Session-affinity header သုံးခုကို upstream သို့ ဘယ်တော့မှ forward မလုပ်ပါ — executor များသည် client header များကို pass-through လုပ်ခြင်းမပြုဘဲ ၎င်းတို့၏ကိုယ်ပိုင် upstream header များကို အစမှတဖန် တည်ဆောက်သောကြောင့် ၎င်းသည် internal correlation id အဖြစ်သာ ဆက်လက်ရှိနေပါသည်။
+session-affinity header သုံးခုကို upstream သို့ ဘယ်သောအခါမျှ မပေးပို့ပါ — executors များသည် client headers များကို လွှဲပြောင်းမပေးဘဲ ကိုယ်ပိုင် upstream headers များကို အစမှတစ်ဖန် တည်ဆောက်သောကြောင့်၊ ၎င်းသည် အတွင်းပိုင်း correlation id အဖြစ်သာ ဆက်လက်တည်ရှိပါသည်။
 
-### သီးသန့် managed session connection lease များ
+### သီးသန့် (exclusive) managed session connection lease များ
 
-**အကျုံးဝင်မှု:** active managed HTTP client/session တစ်ခုသည် အရည်အချင်းပြည့်မီသော OmniRoute connection တစ်ခုကို ပိုင်ဆိုင်သည်။
+**အကျယ်အဝန်း:** active ဖြစ်နေသော managed HTTP client/session တစ်ခုသည် အရည်အချင်းပြည့်မှီသော (eligible) OmniRoute connection တစ်ခုကို ပိုင်ဆိုင်ပါသည်။
 
-**ရည်ရွယ်ချက်:** request များစွာအတင်း hard routing fence လိုအပ်သော client များအတွက် တာရှည်ခံသော သီးသန့် connection ပိုင်ဆိုင်မှုကို ပေးစွမ်းခြင်း။ ၎င်းသည် soft continuity preference ဖြစ်သော session affinity နှင့် ကွာခြားသည် — သီးသန့် lease တစ်ခုသည် lifecycle state ကို SQLite အတွင်း persist လုပ်ထားပြီး၊ global active-owner နှင့် active-connection uniqueness ကို စည်းကမ်းချက်ဖြင့် အာမခံစေကာ၊ provider dispatch မပြုလုပ်မီ stale generation ကို ပယ်ချသည်။
+**ရည်ရွယ်ချက်:** requests အများအပြားတလျှောက် ခိုင်မာသော routing ခြားနားမှု (hard routing fence) လိုအပ်သော clients များအတွက် ရှည်လျားခိုင်မြဲသော သီးသန့် connection ပိုင်ဆိုင်မှုကို ပေးစွမ်းရန်။ ၎င်းသည် session affinity နှင့် ကွာခြားပါသည် — session affinity သည် ဆက်လက်တည်ရှိရန်အတွက် နူးညံ့သော ဦးစားပေးချက်သာဖြစ်သည်: exclusive lease တစ်ခုသည် lifecycle state ကို SQLite အတွင်း ဆက်လက်သိမ်းဆည်းထားပြီး၊ global active-owner နှင့် active-connection တစ်ခုတည်းဖြစ်မှု (uniqueness) ကို အတင်းအကျပ် အာဏာတည်စေရုံသာမက provider dispatch မပြုလုပ်မီ stale generation တစ်ခုကိုလည်း ငြင်းပယ်ပါသည်။
 
-ဤ feature သည် API key တစ်ခုချင်းစီအလိုက် opt-in ဖြစ်သည်။ managed key တစ်ခုတွင် `lease:exclusive` scope နှင့် explicit non-empty `allowedConnections` list ရှိရမည်။ မည်သည့် HTTP client မဆို lifecycle endpoint ကို အသုံးပြုနိုင်သည်။ client name၊ user-agent၊ provider၊ OAuth method သို့မဟုတ် model မည်သည့်အရာမျှ မလိုအပ်ပါ။ lease သည် model မဟုတ်ဘဲ connection ကို ပိုင်ဆိုင်သောကြောင့် connection သည် ပုံမှန်အတိုင်း အရည်အချင်းပြည့်မီနေဆဲဖြစ်သမျှ model ပြောင်းလဲမှုသည် binding ကို ဆက်လက်ထိန်းသိမ်းထားနိုင်သည်။ ပုံမှန် model၊ quota၊ health၊ cooldown နှင့် allowlist စည်းမျဉ်းများသည် authoritative ဆက်လက်ဖြစ်နေပြီး တူညီသော generation ကို အခြား free ဖြစ်နေသော အရည်အချင်းပြည့်မီသော connection တစ်ခုသို့ လွှဲပြောင်းနိုင်သည်။
+ဤ feature သည် API key တစ်ခုချင်းစီအတွက် opt-in ဖြစ်သည်။ Managed key တစ်ခုတွင် `lease:exclusive` scope ရှိရမည်ဖြစ်ပြီး အလွတ်မဟုတ်ကြောင်း အတည်ပြုဖော်ပြထားသော `allowedConnections` list လည်း ရှိရမည်။ HTTP client မည်သည်မဆို lifecycle endpoint ကို အသုံးပြုနိုင်သည်။ client name, user-agent, provider, OAuth method သို့မဟုတ် model မည်သည်မျှ လိုအပ်မည် မဟုတ်ပါ။ Lease သည် model မဟုတ်ဘဲ connection ကို ပိုင်ဆိုင်ခြင်းဖြစ်သောကြောင့် connection သည် ပုံမှန်အတိုင်း eligible ဆက်ဖြစ်နေသရွေ့ model ပြောင်းလဲမှုက binding ကို ဆက်လက်ထိန်းသိမ်းထားစေသည်။ ပုံမှန် model, quota, health, cooldown နှင့် allowlist စည်းကမ်းများသည် ဆက်လက်၍ authoritative ဖြစ်နေဆဲဖြစ်ပြီး generation တူညီသည့်အရာကို အခြား free eligible connection တစ်ခုသို့ ပြောင်းလဲသွားစေနိုင်သည်။
 
-Lifecycle ကို `POST /api/v1/session-leases` ဖြင့် JSON action များ `acquire`၊ `renew` နှင့် `release` ဖြင့် ဆောင်ရွက်သည်။
-Managed inference request များသည် opaque `X-OmniRoute-Lease-Owner` တန်ဖိုးနှင့် တိကျသော
-`X-OmniRoute-Lease-Generation` ကို တင်ပြသည်။ Owner သည် `vlo_` ပြီးနောက် base64url စာလုံး 43 လုံး ကို အသုံးပြုသည်;
-၎င်း၏ SHA-256 hash ကိုသာ သိမ်းဆည်းသည်။ နောက်ဆုံး dispatch fence တိုင်းသည် အတည်ပြုထားသော API key ID နှင့်
-active connection ID ကိုလည်း ချည်နှောင်ထားသည်။ Lease control header များကို log များ၊ သိမ်းဆည်းထားသော request
-snapshot များနှင့် upstream executor header များမှ ဖယ်ရှားသည်။
+Lifecycle သည် JSON actions ဖြစ်သော `acquire`, `renew` နှင့် `release` များပါရှိသော `POST /api/v1/session-leases` ဖြစ်သည်။ Managed inference request များသည် opaque ဖြစ်သော `X-OmniRoute-Lease-Owner` တန်ဖိုးနှင့် အတိအကျ `X-OmniRoute-Lease-Generation` ကို တင်ပြရမည်။ Owner သည် `vlo_` ပြီးနောက် base64url စာလုံး ၄၃ လုံးဖြင့် ဖွဲ့စည်းထားခြင်းဖြစ်ပြီး ၎င်း၏ SHA-256 hash ကိုသာ သိမ်းဆည်းသည်။ နောက်ဆုံး dispatch fence တိုင်းသည် စစ်မှန်ကြောင်းအတည်ပြုပြီးသား API key ID နှင့် active connection ID ကိုလည်း ချည်နှောင်သည်။ Lease control header များကို log များ၊ ထိန်းသိမ်းထားသော request snapshot များနှင့် upstream executor header များမှ ဖယ်ရှားထားသည်။
 
-ပုံမှန် routing တွင် eligible managed candidate များ ရှိနေသော်လည်း free candidate တိုင်းကို
-foreign active lease မှ သိမ်းပိုက်ထားပါက၊ OmniRoute သည် HTTP `429`၊ lease-capacity-unavailable code၊
-waiting-for-capacity state နှင့် သက်ဆိုင်ရာ အစောဆုံး သက်တမ်းကုန်ဆုံးချိန်မှ ရရှိသော bounded `Retry-After`
-ကို ပြန်ပေးသည်။ ပုံမှန် empty eligibility သည် lease contention မဟုတ်ပဲ ၎င်း၏ လက်ရှိ routing error semantics
-ကို ထိန်းသိမ်းထားဆဲ ဖြစ်သည်။
+ပုံမှန် routing တွင် eligible managed candidate များ ရှိနေသော်လည်း free candidate အားလုံးကို အခြားဘက်မှ active lease များ သိမ်းပိုက်ထားပါက OmniRoute သည် HTTP `429`၊ lease-capacity-unavailable code၊ waiting-for-capacity state နှင့် သက်ဆိုင်ရာ သက်တမ်းကုန်ဆုံးချိန် အစောဆုံးမှ ရရှိသော ကန့်သတ်ထားသော `Retry-After` ကို ပြန်ပို့သည်။ ပုံမှန် eligibility အလွတ်ဖြစ်မှုသည် lease contention မဟုတ်ဘဲ ၎င်း၏ လက်ရှိ routing error semantics ကို ဆက်လက်ထိန်းသိမ်းထားသည်။
 
-ဆက်စပ် mechanism များသည် ခွဲခြားထားဆဲဖြစ်သည်—
+သက်ဆိုင်ရာ mechanism များသည် ဆက်လက်ခွဲခြားထားဆဲဖြစ်သည်။
 
 - OAuth session occupancy သည် OAuth account များအတွက် process-local soft distribution ဖြစ်သည်။
-- Account semaphore များသည် request-concurrency permit များ ပေးအပ်ပြီး request ပြီးဆုံးသည့်အခါ ရပ်ဆိုင်းသည်။
-- Exclusive managed session lease များသည် generation fence ပါရှိသော durable lifecycle ownership ဖြစ်သည်။
-
----
+- Account semaphore များသည် request-concurrency permit များ ပေးအပ်ပြီး request ပြီးဆုံးသောအခါ သက်တမ်းကုန်ဆုံးသည်။
+- Exclusive managed session lease များသည် generation fence ပါရှိသော ရေရှည်ခံသော lifecycle ownership ဖြစ်သည်။
 
 ## 3. Model Lockout
 
@@ -380,6 +356,17 @@ Combo strategy အားလုံး (enable လုပ်ထားသောအ�
 
 တူညီသော gate သည် pre-dispatch case (#16319) ကိုလည်း လွှမ်းခြုံပေးသည်။ combo ၏ target အားလုံးသည် ၎င်းတို့၏ model များ short transient lockout အတွင်းတွင် ရှိနေသောကြောင့် မည်သည့် ကြိုးပမ်းမှုမျှ မပြုလုပ်ရသေးဘဲ skip ခံရသောအခါ၊ zero-attempt path သည် hint-less `503 ALL_TARGETS_SKIPPED` ကို ဖြေကြားမည့်အစား တူညီသော ceiling များအောက်တွင် lock ကို စောင့်ဆိုင်းပြီး ပြန်လည် dispatch လုပ်သည်။ စောင့်ဆိုင်းခွင့် မပြုနိုင်သောအခါ (ceiling၊ attempt သို့မဟုတ် budget ကုန်ဆုံးခြင်း၊ သို့မဟုတ် feature ပိတ်ထားခြင်း)၊ terminal response သည် အစောဆုံး transient lock သက်တမ်းကုန်ချိန်မှ `retry_after` / `reset_at` ကို သယ်ဆောင်လာသည့် `429 rate_limit_error` သို့ upgrade ဖြစ်သည်။ quota၊ auth နှင့် not-found lock များကမူ hint-less 503 ကို ဆက်လက်ထားရှိသည်။
 
+```text
+#16319 · comboCooldownWait · pre-dispatch (attempts = 0)
+all targets skipped + transient model lockout:
+  enabled ∧ 0 < waitMs ≤ maxWaitMs ∧ attempt < maxAttempts ∧ budgetLeftMs ≥ waitMs
+    → wait → re-dispatch
+  wait = false → HTTP 429 rate_limit_error
+  retry_after / reset_at ← earliest transient lock expiry
+quota_exhausted / auth_error / not_found / not_found_local:
+  no transient hint → HTTP 503 ALL_TARGETS_SKIPPED
+```
+
 ---
 
 ## 5. တောင်းဆိုမှုတန်းစီစာရင်း ဝင်ခွင့်ထိန်းချုပ်မှု (v3.8.49 · issue #6593)
@@ -471,103 +458,303 @@ watchdog သည် abort လုပ်နိုင်ရန် warm-up ကာလ�
 
 ---
 
-## 7. Upstream Status ပြန်လည်ဖော်ပြခြင်း (မှားယွင်းစွာ ဖော်ပြထားသော quota errors)
+## 7. Upstream Status Restatement (quota error များ မှားယွင်းဖော်ပြခြင်း)
 
-**အကျုံးဝင်မှု:** temporary quota ကုန်ဆုံးသွားမှုကို မှားယွင်းသော HTTP status ဖြင့် သတင်းပို့သော upstream gateway တစ်ခု။
+**နယ်ပယ်:** temporary quota ကုန်ဆုံးသွားခြင်းကို မှားယွင်းသော HTTP status ဖြင့် အစီရင်ခံသော upstream gateway တစ်ခု။
 
-**ရည်ရွယ်ချက်:** classification မလုပ်ဆောင်မီ လူ့ကို လွဲမှားစေသော status ကို ပြင်ဆင်ရန်၊ ၎င်းဖြင့် downstream consumers များ (fallback engine၊ combo aggregation၊ client ကိုရင်ဆိုင်ရသော response) က ပျက်ကွက်မှု၏ retry-လုပ်နိုင်သော အစစ်အမှန် သဘောသဘာဝကို မြင်တွေ့နိုင်စေရန်။
+**ရည်ရွယ်ချက်:** classification မပြုလုပ်မီ မှားယွင်းနေသော status ကို ပြင်ဆင်ရန်ဖြစ်ပြီး၊ downstream consumer များ (fallback engine၊ combo aggregation၊ client-facing response) မှ failure ၏ စစ်မှန်သော retryable သဘောသဘာဝကို မြင်တွေ့နိုင်စေရန်ဖြစ်သည်။
 
-Gateways အချို့က TEMPORARY quota ကုန်ဆုံးမှုကို retry-လုပ်မရသော HTTP status ဖြင့် ညွှန်ပြတတ်ကြသည်။ `agentrouter.org` က standard `429` အစား တရုတ်ဘာသာ body (`用户额度不足` / `额度不足`) နှင့်အတူ `403` (တစ်ခါတစ်ရံ `400`) ကို ပြန်ပေးသည်။ Claude Code ကဲ့သို့ clients များက `403` ကို permanent အဖြစ် ယူဆပြီး session ကို abort လုပ်ကြသည်၊ ပြင်ဆင်ခြင်းမရှိပါက fallback engine က ၎င်းကို quota event အစား `AUTH_ERROR` အဖြစ် ခွဲခြားသတ်မှတ်လိမ့်မည်။
+Gateway အချို့က TEMPORARY quota ကုန်ဆုံးမှုကို non-retryable HTTP status ဖြင့်
+ဖော်ပြသည်။ `agentrouter.org` သည် standard `429` အစား `403` (တစ်ခါတစ်ရံ `400`) ကို
+တရုတ်စာဖြင့် (`用户额度不足` / `额度不足`) ပြန်ပေးသည်။ Claude Code ကဲ့သို့သော client
+များက `403` ကို permanent အဖြစ် သတ်မှတ်ပြီး session ကို ရပ်တန့်သွားပြီး၊ ပြင်ဆင်ခြင်း
+မရှိပါက fallback engine က ၎င်းကို quota event အစား `AUTH_ERROR` အဖြစ်
+ခွဲခြားသတ်မှတ်ပါလိမ့်မည်။
 
 **အကောင်အထည်ဖော်မှု:**
 
-- Registry + matcher: `open-sse/config/upstreamStatusRestatement.ts` — provider-တစ်ခုချင်းစီအတွက် rules စာရင်း (`{id, fromStatuses, toStatus, textMarkers, excludeMarkers, defaultRetryAfterMs}`)၊ `applyStatusRestatement()` မှတဆင့် ကိုက်ညီမှုရှိမရှိ စစ်ဆေးသည်။
-- ခေါ်ဆိုသောနေရာ (Call site): `open-sse/handlers/chatCore.ts` (line 3654 ခန့်) ရှိ `providerFailure:` block — error HTTP status (`!providerResponse.ok`) ပါဝင်သော upstream response ကို `parseUpstreamError()` က parse လုပ်ပြီးနောက်ချင်း၊ မည်သည့် classification မဆောင်ရွက်မီတွင် ဖြစ်သည်၊ downstream consumer တိုင်းက ပြင်ဆင်ပြီး status ကို မြင်ရစေရန်။ `200` SSE stream အတွင်းတွင် ထည့်သွင်းထားသော errors များက သီးခြား နောက်ပိုင်း stream-parsing path တစ်ခုကို လိုက်နာသွားပြီး ယနေ့တွင် ဤ hook က လွှမ်းခြုံခြင်း **မရှိပါ** — သိရှိပြီးသား ကန့်သတ်ချက်တစ်ခုဖြစ်ပြီး agentrouter ၏ misstatus (၎င်းသည် error HTTP status အဖြစ် ထွက်ပေါ်လာသည်) အတွက်ကား မလိုအပ်သေးပါ။
-- Retry eligibility: `429` သည် `RETRY_AFTER_ELIGIBLE_STATUSES` (`open-sse/services/combo/unavailableRetryGate.ts`) ထဲတွင် ပါဝင်သဖြင့်၊ ပြန်လည်ဖော်ပြထားသော error တစ်ခုသည် အသုံးမကျတော့သော `403` အဖြစ် ထွက်ပေါ်မလာဘဲ စစ်မှန်သော retry window တစ်ခုကို ဆောင်လာစေသည်။
-- synthetic `60s` `defaultRetryAfterMs` (`upstreamStatusRestatement.ts`) သည် ပြန်လည်ဖော်ပြသော response က **client** ကို ပြောဆိုသည့်အရာသာ ဖြစ်သည်၊ ၎င်းကိုယ်တိုင်က connection ၏ internal cooldown/lockout ကာလ မဟုတ်ပါ — ယင်းကို ပြန်လည်ဖော်ပြသော error ကို အမှန်တကယ် ကိုင်တွယ်ဖြေရှင်းသော mechanism က သီးခြားစီမံထားသည် (API-key providers များအတွက် Connection Cooldown ၏ escalating backoff၊ §2၊ base `3s`၊ သို့မဟုတ် agentrouter ကဲ့သို့သော per-model-quota providers များအတွက် Model Lockout၊ §3)။ router သည် client ကို ကြေညာထားသော 60s window ထက် internally ပိုမိုစောစွာ retry လုပ်ရန် အခွင့်ရရှိနိုင်သည် — ရည်ရွယ်ချက်ရှိရှိ ချန်လှပ်ထားသော headroom ဖြစ်ပြီး bug မဟုတ်ပါ။
+- Registry + matcher: `open-sse/config/upstreamStatusRestatement.ts` — provider
+  တစ်ခုချင်းစီအတွက် rule စာရင်း (`{id, fromStatuses, toStatus, textMarkers,
+excludeMarkers, defaultRetryAfterMs}`) ဖြစ်ပြီး `applyStatusRestatement()` မှတစ်ဆင့်
+  match လုပ်သည်။
+- Call site: `open-sse/handlers/chatCore.ts` ရှိ `providerFailure:` block
+  (line 3654 ခန့်) တွင်၊ error HTTP status (`!providerResponse.ok`) ပါသော upstream
+  response ကို `parseUpstreamError()` မှ parse ပြုလုပ်ပြီးသည့်နောက်ချိန်တွင်၊
+  မည်သည့် classification မဆို မစတင်မီ နေရာတွင် ရှိပြီး၊ downstream consumer
+  အားလုံးက ပြင်ဆင်ပြီးသား status ကို မြင်တွေ့နိုင်စေသည်။ `200` SSE stream
+  အတွင်းတွင် ပါဝင်နေသော error များမှာ သီးခြားသော နောက်ပိုင်း stream-parsing
+  လမ်းကြောင်းတစ်ခုကို လိုက်နာပြီး၊ ဤ hook ဖြင့် ယနေ့တွင် **မကျောက်ပါဝင်ပါ** — ဤမှာ
+  သိထားပြီးသား ကန့်သတ်ချက်တစ်ခုဖြစ်ပြီး agentrouter ၏ misstatus အတွက်မှာ မလိုအပ်သေးပါ
+  (၎င်းသည် error HTTP status အဖြစ် ပေါ်ပေါက်သောကြောင့်)။
+- Retry eligibility: `429` သည် `RETRY_AFTER_ELIGIBLE_STATUSES`
+  (`open-sse/services/combo/unavailableRetryGate.ts`) အတွင်းတွင် ပါဝင်သောကြောင့်၊
+  restated error တစ်ခုသည် dead `403` အဖြစ်ပေါ်ပေါက်စေခြင်းအစား စစ်မှန်သော retry
+  window ကို သယ်ဆောင်လာသည်။
+- Synthetic `60s` `defaultRetryAfterMs` (`upstreamStatusRestatement.ts`) သည်
+  restated response က **client** ကို ပြောသည့်အချက်သာဖြစ်ပြီး၊ ၎င်းသည် connection
+  ၏ internal cooldown/lockout ကြာချိန် မဟုတ်ပါ — ထိုအရာကို restated error ကို
+  အမှန်တကယ် ကိုင်တွယ်သည့် mechanism (API-key provider များအတွက် base `3s` ပါသော
+  Connection Cooldown ၏ escalating backoff၊ §2; သို့မဟုတ် agentrouter ကဲ့သို့သော
+  per-model-quota provider များအတွက် Model Lockout၊ §3) က သီးခြားစီ စီမံသည်။
+  Router သည် client ကို ကြေညာသည့် 60s window မတိုင်မီ internally retry
+  လုပ်ရန် eligible ဖြစ်နိုင်သည် — ၎င်းမှာ bug မဟုတ်ဘဲ ရည်ရွယ်ချက်ဖြင့် ခွဲဝေထားသော
+  headroom ဖြစ်သည်။
 
-Permanent errors များ (agentrouter ၏ `无权访问模型` — ဤ model ကို access ရခွင့်မရှိပါ) ကို ဘယ်တော့မှ ပြန်လည်ဖော်ပြခြင်း မပြုပါ- `textMarkers` က ကိုက်ညီနေသော်လည်း `excludeMarkers` က rule ကို veto လုပ်သဖြင့် error က ၎င်း၏ မူရင်း status ကို ဆက်လက်ထိန်းသိမ်းထားပြီး မည်သည့်အရာကမှ ၎င်းကို အဆက်မပြတ် retry လုပ်ခြင်း မရှိပါ။ ကိုက်ညီသော provider classification rule (`open-sse/config/providerErrorRules.ts` ရှိ `agentrouter-model-access-denied`: `reason: "auth_error"`၊ `scope: "model"`၊ ကြေညာထားသော base cooldown `6h`) ကို `checkFallbackError` (`open-sse/services/accountFallback.ts`) က generic apikey-category `FORBIDDEN` early-return _မလုပ်ဆောင်မီ_ `honorsRuleLockScope(provider)` (#10334 — လက်ရှိတွင် `providerErrorRules.ts` ရှိ `HONORS_RULE_LOCK_SCOPE_PROVIDERS` allowlist မှတဆင့် agentrouter တစ်ခုတည်း သီးသန့်) ပေါ် gate လုပ်ထားခြင်းဖြင့် ရှေးဦးစွာ ရည်ညွှန်းစစ်ဆေးသည်။ rule ၏ ကြေညာထားသော 6h cooldown သည် `fallbackResult.baseCooldownMs` အဖြစ် စီးဆင်းသွားသော်လည်း ၎င်းက ရှိပြီးသား per-model-quota lockout path (`lockModelIfPerModelQuota()` / `recordModelLockoutFailure()`၊ cooldown source မှလွဲ၍ #10334 က ပြောင်းလဲခြင်းမရှိ) သို့ ဆက်လက်ပေးစွမ်းသည်- အခြား model lockout တိုင်းကဲ့သို့ပင် operator ၏ `mlSettings.maxCooldownMs` (default `1_800_000ms` / 30min) သို့ clamp လုပ်ခံရပြီး _persist လုပ်ထားသော lockout reason_ သည် rule ၏ `"auth_error"` မဟုတ်ဘဲ ရှိပြီးသား hardcoded `"forbidden"` အဖြစ်သာ ဆက်လက်တည်ရှိသည် — end-to-end တွင် cooldown ကာလသာ အသိအမှတ်ပြုခံရပြီး reason string မဟုတ်ပါ။ connection ကိုယ်တိုင်က active ဖြစ်နေဆဲဖြစ်ပြီး တစ်ခုတည်းသော connection ပေါ်ရှိ sibling models များ သက်ရောက်မှုမရှိပါ။
+Permanent error များ (agentrouter ၏ `无权访问模型` — ဤ model ကို access ရယူရန်
+ခွင့်မရှိခြင်း) ကို ဘယ်တော့မှ restate မလုပ်ပါ: `textMarkers` နှင့် match သည်တိုင်အောင်
+`excludeMarkers` က rule ကို veto လုပ်သောကြောင့်၊ error သည် မူရင်း status ကို
+ထိန်းသိမ်းထားနိုင်ပြီး မည်သည့်အရာကမှ ထိုအရာကို အဆုံးမဲ့ retry မလုပ်ပါ။ သက်ဆိုင်ရာ
+provider classification rule
+(`open-sse/config/providerErrorRules.ts` ရှိ
+`agentrouter-model-access-denied`:
+`reason: "auth_error"`၊ `scope: "model"`၊ ကြေညာထားသော base cooldown `6h`) ကို
+`checkFallbackError` (`open-sse/services/accountFallback.ts`) မှ generic
+apikey-category `FORBIDDEN` early-return _မတိုင်မီ_ ကဆွေးနွေးကြည့်ရှုပြီး၊
+`honorsRuleLockScope(provider)` ဖြင့် gate လုပ်ထားသည် (#10334 — လက်ရှိတွင်
+`providerErrorRules.ts` ရှိ `HONORS_RULE_LOCK_SCOPE_PROVIDERS` allowlist မှတစ်ဆင့်
+agentrouter သာလျှင် ရရှိသည်)။ Rule ၏ ကြေညာထားသော 6h cooldown သည်
+`fallbackResult.baseCooldownMs` အဖြစ် စီးဆင်းသွားသော်လည်း၊ ၎င်းသည် ရှိပြီးသား
+per-model-quota lockout လမ်းကြောင်း (`lockModelIfPerModelQuota()` /
+`recordModelLockoutFailure()`၊ cooldown source ကလွဲပြီး #10334 ဖြင့် မပြောင်းလဲပါ) ကို
+ဆက်လက်ပံ့ပိုးသည်: ၎င်းကို အခြား model lockout အားလုံးနည်းတူ operator ၏
+`mlSettings.maxCooldownMs` (default `1_800_000ms` / 30min) သို့ clamp လုပ်ခံရပြီး၊
+_persisted lockout reason_ မှာ rule ၏ `"auth_error"` မဟုတ်ဘဲ ရှိပြီးသား hardcode
+ထားသော `"forbidden"` ဖြစ်နေဆဲပါ — end-to-end honor လုပ်ခံရသည်မှာ reason string
+မဟုတ်ဘဲ cooldown ကြာချိန်သာဖြစ်သည်။ Connection ကိုယ်တိုင်မှာ active ဖြစ်နေဆဲဖြစ်ပြီး၊
+တူညီသော connection ပေါ်ရှိ sibling model များ သက်ရောက်မှုမရှိပါ။
 
-ပြန်လည်ပြောင်းလဲဖော်ပြခံထားရသော quota အမှားများ (`额度不足`) သည် production တွင် provider rule သို့ ရောက်ရှိသည် (`agentrouter-user-quota-exhausted`: `reason: "quota_exhausted"`, `scope: "connection"`, ကိုယ်ပိုင်သတ်မှတ်ထားသော cooldown မရှိ — persistence layer ၏ scaled backoff default ကို အသုံးပြုသည်)။ #10334 ကတည်းက `ProviderErrorRuleMatch` ပေါ်ရှိ `scope` ကို end-to-end တစ်လျှောက်လုံး အမှန်တကယ် အသုံးပြုနေပြီဖြစ်သော်လည်း `HONORS_RULE_LOCK_SCOPE_PROVIDERS` allowlist ထဲမှ provider များအတွက် **သာ** ဖြစ်သည် (`providerErrorRules.ts` — ယနေ့တွင် `"agentrouter"` သာ၊ `honorsRuleLockScope()` မှတဆင့် gate လုပ်ထားသည်)။ အခြား provider တိုင်းအတွက်မှာ `scope` သည် #10334 မတိုင်ခင်ကအတိုင်း အတိအကျ အချက်အလက်ပြရုံသက်သက်သာ ဆက်လက်ဖြစ်နေဆဲဖြစ်သည်။ `checkFallbackError` သည် ကိုက်ညီသော rule ၏ scope ကို `fallbackResult.ruleScope` အဖြစ် ထုတ်ဖော်ပြသစွတ်သည်။ `isAgentrouterConnectionQuotaScope()` (`src/sse/services/auth.ts`) သည် `ruleScope` တစ်ခုကို connection တစ်ခုလုံးဆိုင်ရာ၊ ကိုယ်တိုင်ပြန်လည်ကောင်းမွန်လာနိုင်သော signal အဖြစ် လုံခြုံစွာ လေးစားလိုက်နာနိုင်ကြောင်း အတည်ပြုပေးသော ဘုံ guard ဖြစ်သည် (scope `"connection"`၊ reason `quota_exhausted`၊ ဘယ်တော့မှ `permanent` မဟုတ်ဘဲ၊ ဘယ်တော့မှ `creditsExhausted` လည်း မဟုတ်ဘဲ — နောင်တွင် scope `"connection"` ကို အမြဲတမ်း account အခြေအနေတစ်ခုနှင့် တွဲဖက်လာနိုင်မည့် rule ကို ကာကွယ်ရန်ဖြစ်သည်)။ ၎င်းကို သုံးစွဲသူ နှစ်ခုက ခေါ်ဆိုသည်:
+Restated quota error များ (`额度不足`) သည် production တွင် provider rule တစ်ခုသို့
+ရောက်ရှိသည် (`agentrouter-user-quota-exhausted`: `reason: "quota_exhausted"`,
+`scope:
+"connection"`, ကိုယ်ပိုင်ကြေညာထားသော cooldown မရှိ — persistence layer ၏ scaled
+backoff default ကို အသုံးပြုသည်)။ #10334 နောက်ပိုင်း `ProviderErrorRuleMatch` ပေါ်ရှိ
+`scope` ကို end-to-end စားသုံးပြီဖြစ်သော်လည်း၊ `HONORS_RULE_LOCK_SCOPE_PROVIDERS`
+allowlist (`providerErrorRules.ts` — ယနေ့ `"agentrouter"` သာလျှင်၊
+`honorsRuleLockScope()` မှတစ်ဆင့် gate လုပ်ထားသည်) အတွင်းရှိ provider များအတွက်
+**သာလျှင်** ဖြစ်သည်။ အခြား provider အားလုံးအတွက်မှာ `scope` သည် #10334 မတိုင်ခင်နည်းတူ
+informational အဖြစ်သာ ဆက်လက်ရှိနေသည်။
+`checkFallbackError` က match လုပ်ထားသော rule ၏ scope ကို
+`fallbackResult.ruleScope` အဖြစ် ထုတ်ဖော်ပြပြီး၊ `isAgentrouterConnectionQuotaScope()`
+(`src/sse/services/auth.ts`) သည် `ruleScope` ကို connection-wide, self-recovering
+signal အဖြစ် honor လုပ်ရန် စစ်မှန်စွာ လုံခြောက်ကြောင်း အတည်ပြုပေးသော shared guard
+ဖြစ်သည် (scope `"connection"`၊ reason `quota_exhausted`၊ ဘယ်တော့မှ `permanent`
+မဟုတ်ခြင်း၊ ဘယ်တော့မှ `creditsExhausted` မဟုတ်ခြင်း — scope `"connection"` ကို permanent
+account state နှင့် ပေါင်းစပ်မည့် rule အနာဂတ်တစ်ခုအတွက် ကာကွယ်မှုတစ်ခု)။ Consumer
+နှစ်ခုက ၎င်းကို ခေါ်ဆိုသည်:
 
-- **Persistence** (`markAccountUnavailable()`, `src/sse/services/auth.ts`): passthrough-provider ၏ **per-model** lockout branch သို့ မရောက်သွားစေဘဲ (agentrouter သည် `passthroughModels: true` → `hasPerModelQuota()` က `true` ပြန်ပေးသည်)၊ ၎င်းသည် **ယာယီ connection cooldown** ကို အသုံးချသည် — `testStatus: "unavailable"` + `rateLimitedUntil`၊ terminal status (`credits_exhausted`/`banned`/`expired`) ဘယ်တော့မှ မဟုတ်ဘဲ — ထို့ကြောင့် cooldown ကုန်ဆုံးသွားသည်နှင့် connection သည် ကိုယ်တိုင် credential ပြန်လည်သတ်မှတ်ပေးရန် မလိုအပ်ဘဲ ကိုယ်တိုင် ပြန်လည်ကောင်းမွန်လာသည်။ `disableCooling: true` ရှိသော connection များအတွက်မူ ကျော်လွန်ပေးသည် (#2997): ထို opt-out သည် per-model lockout သို့ ဆက်လက်ရောက်ရှိသွားသည် (မှတ်တမ်းတင်ထားသော trade-off တစ်ခုဖြစ်သည် — branch အပေါ်ရှိ code comment ကို ကြည့်ပါ)။
-- **တူညီသော-request combo routing** (`applyComboTargetExhaustion()`, `open-sse/services/combo/targetExhaustion.ts`): guard အတူတူပင်က connection ကို in-memory `exhaustedConnections` set ထဲသို့ `${provider}:${connectionId}` ကို key အဖြစ် မှတ်သားသည်။ ၎င်းသည် ကိုယ်ပိုင် target object ပေါ်တွင် _အဆိုပါ `connectionId` အတိအကျကို ပင်ကိုယ်တိုင် ဆောင်ထားပြီးဖြစ်သော_ ကျန်ရှိနေသော တူညီသော-request target ကိုသာ ကျော်လွန်ပေးသည် (`getExhaustedTargetSkipReason()`, `open-sse/services/combo/comboPredicates.ts`, `exhaustedConnections` ကို ရှာဖွေမှုမပြုမီ `if (provider && connectionId)`) — sibling target များသည် ကိုယ်ပိုင် pinned `connectionId` မဆောင်ကြဘဲ၊ တစ်ခုကို dispatch တစ်ကြိမ်လျှင် response ၏ `X-OmniRoute-Selected-Connection-Id` header မှသာ ဆုံးဖြတ်ရရှိသော ရိုးရှင်းသော model-list combo အဖွဲ့မှာ ထို key ကိုက်ညီမှုကို ဘယ်တော့မှ ရောက်ရှိခြင်းမရှိပါ။ ထို အဖြစ်များသော ကိစ္စအတွက်၊ ကျန်ရှိနေသော leg က မကြာသေးခင်က exhausted ဖြစ်သွားသော account ကို ပြန်လည်အသုံးပြုခြင်းမှ တကယ့်ကာကွယ်ပေးမှုမှာ ဤ Set **မဟုတ်ပါ** — ၎င်းသည် အပေါ်ဖော်ပြပါ persistence layer (connection ၏ `rateLimitedUntil` သည် ယခု အနာဂတ်အချိန်သို့ ရောက်ရှိနေပြီ) နှင့် guard အတူတူပင်က ထို failure အတွက် `transientRateLimitedProviders` ကို နှိမ်နင်းပေးခြင်းတို့ ပေါင်းစပ်ထားခြင်း ဖြစ်သည် ("အဆင့်နှစ်ဆင့် ဒီဇိုင်း" နှင့် `targetExhaustion.ts` ရှိ `isAgentrouterConnectionQuotaScope` branch ပေါ်ရှိ code comment ကို ကြည့်ပါ): ထို Set ကို မှတ်သားထားခြင်းမရှိဘဲ ထားရာတွင် `combo.ts` ၏ `allowRateLimitedConnection` force-allow (`open-sse/services/combo.ts:1005-1013`, `:2734-2738`) သည် provider ၏ ကျန်ရှိနေသော leg များအတွက် အသက်ဝင်လာခြင်း **မရှိပါ**၊ ထို့ကြောင့် credential selection ၏ `rateLimitedUntil` filter (`src/sse/services/auth.ts:1238`) ကို ပုံမှန်အတိုင်း လေးစားလိုက်နာခံရပြီး ကျန်ရှိနေသော leg တစ်ခုသည် ကွဲပြားသော၊ ဆက်လက်အသုံးပြုနိုင်သေးသော agentrouter connection တစ်ခုကို ရွေးချယ်သွားသည် သို့မဟုတ် credentials မရှိတော့ဘဲ ကျရှုံးသွားသည် — ၎င်းသည် ဤ branch က မကြာသေးခင်က cooldown ပေးထားသော connection သို့ အတင်းအကြပ် ပြန်လည်ဝင်ရောက်ခြင်း မပြုပါ။
+- **အမြဲတမ်းသိမ်းဆည်းမှု** (`markAccountUnavailable()`, `src/sse/services/auth.ts`):
+  passthrough-provider ၏ **မော်ဒယ်တစ်ခုချင်းစီအလိုက်** lockout
+  branch ထဲသို့ ဝင်သွားမည့်အစား (agentrouter သည် `passthroughModels: true` ဖြစ်သည် → `hasPerModelQuota()`
+  က `true` ပြန်ပေးသည်)၊ ၎င်းသည် **ယာယီ connection cooldown** ကို အသုံးပြုသည် —
+  `testStatus: "unavailable"` + `rateLimitedUntil` ဖြစ်ပြီး၊ အပြီးသတ် status
+  (`credits_exhausted`/`banned`/`expired`) ကို လုံးဝမသုံးပါ — ထို့ကြောင့် cooldown ကာလ
+  ပြီးဆုံးသည်နှင့် connection သည် credential ကို ကိုယ်တိုင် ပြန်လည်သတ်မှတ်ရန် မလိုဘဲ
+  အလိုအလျောက် ပြန်လည်ကောင်းမွန်လာသည်။
+  `disableCooling: true` ပါသော connection များအတွက် ကျော်သွားသည် (#2997)။ ထို opt-out
+  သည် ယင်းအစား per-model lockout သို့ ဆက်လက်ဝင်ရောက်သွားသည် (မှတ်တမ်းတင်ထားသော အပေးအယူတစ်ခု —
+  branch အပေါ်ရှိ code comment ကို ကြည့်ပါ)။
+- **တူညီသော request အတွင်း combo routing** (`applyComboTargetExhaustion()`,
+  `open-sse/services/combo/targetExhaustion.ts`): တူညီသော guard သည် connection ကို
+  `${provider}:${connectionId}` ဖြင့် key သတ်မှတ်ထားသည့် in-memory `exhaustedConnections` set
+  ထဲတွင် မှတ်သားသည်။ ၎င်းသည် ကျန်ရှိသော SAME-REQUEST target တစ်ခု၏ ကိုယ်ပိုင်
+  target object ပေါ်တွင် _အတိအကျ ထို `connectionId` ကိုယ်တိုင် ပါရှိပြီးသား_ ဖြစ်သည့်အခါမှသာ
+  ထို target ကို ကျော်သွားသည် (`getExhaustedTargetSkipReason()`,
+  `open-sse/services/combo/comboPredicates.ts`, `if (provider &&
+connectionId)` သည် `exhaustedConnections` lookup မတိုင်မီ ရှိသည်) — သာမန်
+  model-list combo တစ်ခုတွင် sibling target များ၌ ၎င်းတို့ကိုယ်တိုင် pin လုပ်ထားသော `connectionId`
+  မပါရှိဘဲ response ၏ `X-OmniRoute-Selected-Connection-Id` header မှ dispatch တစ်ကြိမ်စီတွင်သာ
+  resolve လုပ်သောကြောင့် ထို key match ကို လုံးဝမတွေ့ပါ။ ထိုအသုံးများသော အခြေအနေအတွက်
+  ကျန်ရှိသည့် leg တစ်ခုက ယခုကုန်ဆုံးသွားသော account ကို ပြန်လည်အသုံးပြုခြင်းမှ တကယ်ကာကွယ်ပေးသည့်အရာမှာ
+  ဤ Set မဟုတ်ပါ — အပေါ်ရှိ persistence layer (connection ၏ `rateLimitedUntil` သည် ယခု
+  အနာဂတ်အချိန်တစ်ခု ဖြစ်နေသည်) နှင့် failure အတွက် ဤ guard ကပင်
+  `transientRateLimitedProviders` ကို တားဆီးထားခြင်းတို့ ပေါင်းစပ်ထားခြင်းဖြစ်သည်
+  ("အဆင့်နှစ်ဆင့် ဒီဇိုင်း" နှင့် `targetExhaustion.ts` ရှိ
+  `isAgentrouterConnectionQuotaScope` branch ပေါ်မှ code comment ကို ကြည့်ပါ)။ ထို Set ကို
+  အမှတ်မထားဘဲ ထားခြင်းဖြင့် `combo.ts` ၏ `allowRateLimitedConnection` force-allow
+  (`open-sse/services/combo.ts:1005-1013`, `:2734-2738`) သည် provider ၏ ကျန်ရှိသော
+  leg များအတွက် အသက်ဝင်မလာပါ။ ထို့ကြောင့် credential ရွေးချယ်မှု၏ `rateLimitedUntil`
+  filter (`src/sse/services/auth.ts:1238`) ကို ပုံမှန်အတိုင်း လိုက်နာပြီး၊
+  ကျန်ရှိသော leg သည် အခြားအသုံးပြုနိုင်သေးသော agentrouter connection တစ်ခုကို ရွေးချယ်မည်
+  သို့မဟုတ် ရရှိနိုင်သော credential မရှိသဖြင့် မအောင်မြင်မည်ဖြစ်သည် — ဤ branch က
+  ယခု cooldown ချထားသော connection ထဲသို့ အတင်းပြန်ဝင်မည် မဟုတ်ပါ။
 
-### အဆင့်နှစ်ဆင့် ဒီဇိုင်း: status ပြန်လည်ဖော်ပြခြင်း၊ ထို့နောက် ခွဲခြားသတ်မှတ်ခြင်း
+### အဆင့်နှစ်ဆင့် ဒီဇိုင်း- status ပြန်လည်သတ်မှတ်ခြင်း၊ ထို့နောက် အမျိုးအစားခွဲခြားခြင်း
 
-Status ပြန်လည်ဖော်ပြခြင်း (`upstreamStatusRestatement.ts`) နှင့် provider ခွဲခြားသတ်မှတ်မှု rule များ (`open-sse/config/providerErrorRules.ts`, `providerRuleRegistry`) သည် provider id နှင့် text marker များ နှစ်ခုလုံးကို key အဖြစ် အသုံးပြုသော သီးခြားစီ registry များ ဖြစ်သော်လည်း ၎င်းတို့သည် မတူညီသောနေရာများတွင် လည်ပတ်ပြီး မတူညီသော ရည်ရွယ်ချက်များအတွက် ဆောင်ရွက်သည်: ပြန်လည်ဖော်ပြခြင်းက `chatCore.ts` အစပိုင်းတွင် HTTP status ကို ပြင်ဆင်ရေးသားသည်။ ခွဲခြားသတ်မှတ်မှု rule များက `checkFallbackError()` (`open-sse/services/accountFallback.ts`) အတွင်းတွင် fallback `reason` ကို ရွေးချယ်ပြီး lock `scope` (`model` / `provider` / `connection`) ကို ဆုံးဖြတ်ပေးသည်။
+Status ပြန်လည်သတ်မှတ်ခြင်း (`upstreamStatusRestatement.ts`) နှင့် provider
+အမျိုးအစားခွဲခြားရေး rule များ (`open-sse/config/providerErrorRules.ts`,
+`providerRuleRegistry`) သည် provider id နှင့် text marker များကို အခြေခံ၍ key သတ်မှတ်သည့်
+သီးခြား registry များဖြစ်သော်လည်း၊ ၎င်းတို့သည် မတူညီသောနေရာများတွင် လုပ်ဆောင်ပြီး
+ရည်ရွယ်ချက်များလည်း မတူညီပါ။ Restatement သည် `chatCore.ts` ၏ အစောပိုင်းတွင် HTTP status ကို
+ပြန်လည်ရေးသားသည်။ Classification rule များက `checkFallbackError()`
+(`open-sse/services/accountFallback.ts`) အတွင်း fallback `reason` နှင့် lock `scope`
+(`model` / `provider` / `connection`) ကို ရွေးချယ်သည်။
 
-ခွဲခြားသတ်မှတ်မှု rule များသည် `providerErrorRules.ts` ရှိ `FULL_TEXT_RULE_PROVIDERS` allowlist တွင် စာရင်းသွင်းထားသော provider များအတွက်သာ အပြည့်အစုံ error **text** ကို မြင်ရသည် (`额度不足` ကဲ့သို့သော body marker များကို ကိုက်ညီအောင် ရှာဖွေရန် လိုအပ်သည်) — လက်ရှိတွင် `"agentrouter"` သာ ရှိသည်။ အခြား **built-in catalog** provider တိုင်းအတွက်၊ `checkFallbackError` သည် `getProviderErrorRuleMatch` သို့ structured error (`{code, type}`) သာ ပေးပို့သည်၊ ၎င်းသည် header/status/code-based rule များအတွက် လုံလောက်သော်လည်း body-text marker များအတွက်မူ မျက်စိမှိတ်နေသည်။ Helper `resolveRuleMatchBody()` သည် ဤရွေးချယ်မှုကို ဆောင်ရွက်ပေးသည်: allowlist ထဲရှိ provider များအတွက် အပြည့်အစုံ error text၊ အခြားအခြေအနေများအတွက်မူ structured error။ **built-in** provider တစ်ခုကို `FULL_TEXT_RULE_PROVIDERS` သို့ ထည့်သွင်းခြင်းသည် provider တစ်ခုချင်းစီအတွက် ရှင်းလင်းသော opt-in တစ်ခု ဖြစ်သည် — ၎င်းကို စာရင်းတွင် မပါဝင်သော provider တိုင်းအတွက် default လမ်းကြောင်းသည် byte-for-byte မပြောင်းလဲဘဲ တည်ရှိနေစေရန် ရည်ရွယ်ထားခြင်းဖြစ်သည်။
+Classification rule များသည် `providerErrorRules.ts` ရှိ `FULL_TEXT_RULE_PROVIDERS`
+allowlist တွင် ဖော်ပြထားသော provider များအတွက်သာ error **text** အပြည့်အစုံကို မြင်ရသည်
+(`额度不足` ကဲ့သို့ body marker များနှင့် ကိုက်ညီမှုစစ်ရန် လိုအပ်သည်) — လက်ရှိတွင်
+`"agentrouter"` တစ်ခုတည်းသာ ဖြစ်သည်။ အခြား **built-in catalog** provider အားလုံးအတွက်
+`checkFallbackError` သည် `getProviderErrorRuleMatch` ထံ structured error
+(`{code, type}`) ကိုသာ ပေးသည်။ ၎င်းသည် header/status/code ကို အခြေခံသော rule များအတွက်
+လုံလောက်သော်လည်း body-text marker များကို မမြင်နိုင်ပါ။
+`resolveRuleMatchBody()` helper က ဤရွေးချယ်မှုကို လုပ်ဆောင်သည်။ Allowlist ထဲရှိ provider များအတွက်
+error text အပြည့်အစုံကို သုံးပြီး၊ အခြား provider များအတွက် structured error ကို သုံးသည်။
+**built-in** provider တစ်ခုကို `FULL_TEXT_RULE_PROVIDERS` ထဲသို့ ထည့်ခြင်းသည်
+provider တစ်ခုချင်းစီအလိုက် ရှင်းလင်းသော opt-in ဖြစ်သည် — list ထဲမပါသော provider အားလုံးအတွက်
+မူလလမ်းကြောင်းကို byte-for-byte မပြောင်းလဲဘဲ ဆက်ထားနိုင်ရန် ၎င်းကို ထားရှိခြင်းဖြစ်သည်။
 
-Rule ၏ `scope` (`model` / `provider` / `connection`) သည် `FULL_TEXT_RULE_PROVIDERS` မှ သီးခြား opt-in တစ်ခု ဖြစ်သည်: `checkFallbackError` သည် ၎င်းကို `fallbackResult.ruleScope` အဖြစ် ထုတ်ဖော်ပြသစွတ်ရုံသာ ဆောင်ရွက်ပြီး၊ downstream သုံးစွဲသူများကမူ တူညီသော ဖိုင်အတွင်းရှိ `HONORS_RULE_LOCK_SCOPE_PROVIDERS` allowlist ထဲမှ provider များအတွက်သာ ၎င်းကို အချက်အလက်ပြနေသော label တစ်ခုထက် ကျော်လွန်၍ လေးစားလိုက်နာသည် (`gated via honorsRuleLockScope()` — ယနေ့တွင် `"agentrouter"` သာ)။ Provider တစ်ခုသည် ထို allowlist ပေါ်သို့ ရောက်ရှိပြီးနောက် `scope: "connection"` ကိုက်ညီမှုတစ်ခုက အမှန်တကယ် မည်သည့်အရာကို လုပ်ဆောင်သည်ကို အပေါ်ရှိ "ပြန်လည်ဖော်ပြထားသော quota အမှားများ" တွင် ကြည့်ပါ။
+Rule တစ်ခု၏ `scope` (`model` / `provider` / `connection`) သည်
+`FULL_TEXT_RULE_PROVIDERS` နှင့် သီးခြားဖြစ်သော opt-in တစ်ခုဖြစ်သည်။
+`checkFallbackError` သည် ၎င်းကို `fallbackResult.ruleScope` အဖြစ်သာ ထုတ်ပေးပြီး၊
+downstream consumer များကလည်း တူညီသော file ရှိ
+`HONORS_RULE_LOCK_SCOPE_PROVIDERS` allowlist ထဲမှ provider များအတွက်သာ
+၎င်းကို အချက်အလက်ဖော်ပြသည့် label ထက်ပိုသောအရာအဖြစ် လိုက်နာသည်
+(`honorsRuleLockScope()` မှတစ်ဆင့် gate လုပ်ထားသည် — ယနေ့အထိ `"agentrouter"` တစ်ခုတည်းသာ)။
+Provider တစ်ခုသည် ထို allowlist တွင် ပါဝင်ပြီးနောက် `scope: "connection"` match တစ်ခုက
+အမှန်တကယ် ဘာလုပ်သည်ကို အပေါ်ရှိ "ပြန်လည်သတ်မှတ်ထားသော quota error များ" တွင် ကြည့်ပါ။
 
-**#11104 — operator ကြေညာထားသော rule များသည် allowlist နှစ်ခုလုံးကို ကျော်လွှားသည်။** Operator တစ်ဦးသည် ဤဖိုင်ကို ပြင်ဆင်ရန်မလိုဘဲ `settings.providerErrorRules` (`open-sse/config/providerErrorRules.ts::setOperatorProviderErrorRules`) မှတဆင့် runtime အတွင်း provider တစ်ခုချင်းစီအတွက် rule ကို ကြေညာနိုင်သည်။ Operator rule တစ်ခုကို `FULL_TEXT_RULE_PROVIDERS`/`HONORS_RULE_LOCK_SCOPE_PROVIDERS` — built-in catalog rule များ၏ **default** အပြုအမူကို ကာကွယ်ရန် ရည်ရွယ်ထားသော allowlist များ — နောက်ကွယ်တွင် gate ချထားခြင်းကား rule ကြေညာခြင်းကိုယ်တိုင်က operator ၏ ရှင်းလင်းသော opt-in ဖြစ်နေပြီဖြစ်သောကြောင့် အဆိုပါနေရာတွင် စာရင်းသွင်းထားပြီးသား provider များမှလွဲ၍ ကျန် provider တိုင်းအတွက် settings mechanism ကို အကျိုးမသက်ရောက်စေပါလိမ့်မည်။ `resolveRuleMatchBody()` နှင့် `honorsRuleLockScope()` နှစ်ခုလုံးသည် `hasOperatorRuleForProvider()` ကို ဦးစွာစစ်ဆေးသည်- operator rule ရှိသော provider တစ်ခုသည် allowlist နှစ်ခုထဲမှ မည်သည့်တစ်ခုတွင်မဆို ပါဝင်ခြင်းရှိမရှိအပေါ် မမှီတည်ဘဲ raw error text ကို ရရှိပြီး ၎င်း၏ ကြေညာထားသော `scope` ကို လေးစားလိုက်နာခံရသည်။
+**#11104 — operator က ကြေညာထားသော rule များသည် allowlist နှစ်ခုစလုံးကို ကျော်ဖြတ်သည်။**
+Operator တစ်ဦးသည် ဤ file ကို မပြင်ဆင်ဘဲ runtime တွင် `settings.providerErrorRules`
+(`open-sse/config/providerErrorRules.ts::setOperatorProviderErrorRules`) မှတစ်ဆင့်
+provider တစ်ခုချင်းစီအလိုက် rule တစ်ခုကို ကြေညာနိုင်သည်။ Operator rule တစ်ခုကို
+`FULL_TEXT_RULE_PROVIDERS`/`HONORS_RULE_LOCK_SCOPE_PROVIDERS` နောက်တွင် gate လုပ်ခြင်း —
+**built-in catalog rule များ၏ မူလ** အပြုအမူကို ကာကွယ်ရန် ရည်ရွယ်ထားသော allowlist များ —
+သည် ထိုနေရာတွင် ဖော်ပြထားပြီးသား provider များမှလွဲ၍ ကျန် provider အားလုံးအတွက်
+settings ယန္တရားကို အသုံးမဝင်စေမည်ဖြစ်သည်။ အကြောင်းမှာ rule ကို ကြေညာခြင်းကိုယ်တိုင်က
+operator ၏ ရှင်းလင်းသော opt-in ဖြစ်ပြီးသားကြောင့် ဖြစ်သည်။ `resolveRuleMatchBody()` နှင့်
+`honorsRuleLockScope()` နှစ်ခုစလုံးသည် `hasOperatorRuleForProvider()` ကို ဦးစွာစစ်ဆေးသည်။
+Operator rule ပါသော provider သည် allowlist တစ်ခုခုတွင် ပါဝင်သည်ဖြစ်စေ မပါဝင်သည်ဖြစ်စေ
+raw error text ကို ရရှိပြီး ၎င်းကြေညာထားသော `scope` ကို လိုက်နာစေသည်။
 
-**လူသိများသော ကွာဟချက် — HTTP 400 အတွက် `providerRuleRegistry` ကို ဘယ်တော့မျှ ပြန်လည်ရည်စစ်ခြင်းမရှိပါ။** `checkFallbackError` ၏ `BAD_REQUEST` branch သည် status 400 ကို ၎င်း၏ pattern array ကိုယ်ပိုင်များ (`MODEL_ACCESS_DENIED_PATTERNS`, `CONTEXT_OVERFLOW_PATTERNS`, စသည်ဖြင့် `accountFallback.ts` ထဲတွင်ရှိသော) မှတဆင့်သာ လုံးဝခွဲခြားသတ်မှတ်ပြီး ၎င်းအပေါ်ဘက်ရှိ `configuredRule`/`getProviderErrorRuleMatch` branch သို့ မရောက်မီ return ဖြစ်သွားသည်။ `status: 400` ပါဝင်သော built-in catalog rule (သို့မဟုတ် operator rule) တစ်ခုသည် syntax အရ မှန်ကန်နေသော်လည်း ဘယ်တော့မျှ fire မဖြစ်နိုင်ပါ။ ယနေ့တွင် 400 ကို ပစ်မှတ်ထားသော ရှိပြီးသား rule မရှိသဖြင့် production တွင် မည်သည့်အရာမျှ သက်ရောက်မှုမရှိပါ — သို့ရာတွင် အနာဂတ်ရှိ 400 rule တစ်ခုအတွက် ဤ branch ကို ဦးစွာထိခိုက်ရန်လိုအပ်ပြီး ၎င်းသည် rule တစ်ခု ထပ်ထည့်ခြင်းထက် ပိုမိုကြီးမားသော ပြောင်းလဲမှုတစ်ခု (pattern-array အပြုအမူကို မှီခိုနေပြီးဖြစ်သော provider တိုင်းအတွက် 400 ကို ပြန်လည်ခွဲခြားသတ်မှတ်ပေးခြင်း) ဖြစ်ကာ provider တစ်ခုတည်းအတွက် rule ထည့်သွင်းမှု၏ scope အပြင်ဘက်တွင် ရှိနေသည်။
+**သိရှိထားသော ကွက်လပ် — HTTP 400 အတွက် `providerRuleRegistry` ကို လုံးဝ မတိုင်ပင်ပါ။**
+`checkFallbackError` ၏ `BAD_REQUEST` branch သည် status 400 ကို ၎င်း၏ကိုယ်ပိုင်
+pattern array များ (`MODEL_ACCESS_DENIED_PATTERNS`,
+`CONTEXT_OVERFLOW_PATTERNS` စသည်တို့ကို `accountFallback.ts` တွင် တွေ့နိုင်သည်) မှတစ်ဆင့်
+လုံးဝအမျိုးအစားခွဲခြားပြီး၊ ၎င်းအပေါ်ရှိ `configuredRule`/`getProviderErrorRuleMatch` branch
+သို့ မရောက်မီ return ပြန်သည်။ `status: 400` ပါသော built-in catalog rule
+(သို့မဟုတ် operator rule) သည် syntax အရ မှန်ကန်သော်လည်း မည်သည့်အခါမျှ အသက်ဝင်မည်မဟုတ်ပါ။
+ယနေ့ လက်ရှိ rule တစ်ခုမှ 400 ကို ပစ်မှတ်မထားသောကြောင့် production ရှိ မည်သည့်အရာကိုမျှ
+မထိခိုက်ပါ — သို့သော် အနာဂတ် 400 rule တစ်ခုအတွက် ဤ branch ကို ဦးစွာပြင်ဆင်ရန် လိုအပ်သည်။
+၎င်းသည် rule တစ်ခုထည့်ခြင်းထက် ပိုမိုကြီးမားသော ပြောင်းလဲမှုဖြစ်ပြီး
+(pattern-array အပြုအမူအပေါ် မှီခိုနေပြီးသား provider အားလုံးအတွက် 400 ကို
+ပြန်လည်အမျိုးအစားခွဲခြားသည့်အတွက်) provider တစ်ခုတည်းအတွက် rule ထည့်သွင်းမှု၏
+နယ်ပယ်ပြင်ပတွင် ရှိသည်။
 
-### quota ကို မှားယွင်းစွာဖော်ပြသော gateway အသစ်ထည့်သွင်းခြင်း
+### quota မှန်ကန်စွာပြင်ဆင်ပေးသော gateway အသစ် ထည့်သွင်းခြင်း
 
-1. `statusRestatementRegistry` (`open-sse/config/upstreamStatusRestatement.ts`) ထဲတွင် rule array တစ်ခု စာရင်းသွင်းပါ။ `textMarkers` ကို provider-specific ဖြစ်နေစေရန် ထားပါ; `CREDITS_EXHAUSTED_SIGNALS` (`open-sse/services/accountFallback.ts`) နှင့် တိုက်ဆိုင်နိုင်သော ယေဘုယျ English စကားစုများကို ဘယ်တော့မျှ ပြန်လည်အသုံးမပြုပါနှင့်။
-2. မှန်ကန်သော lock scope (account-wide quota အတွက် `connection`၊ per-model error များအတွက် `model`) ကို ရွေးချယ်နိုင်ရန် `open-sse/config/providerErrorRules.ts` (`providerRuleRegistry`) ထဲတွင် classification rule များကို လိုအပ်သလို စာရင်းသွင်းပါ။ ဤအဆင့်သည် error text အပြည့်အစုံ (body marker များ) ကို လိုအပ်သော rule များရှိသည့် provider များအတွက်သာ production တွင် အကျိုးသက်ရောက်သည်- provider id ကို တူညီသောဖိုင်ထဲရှိ `FULL_TEXT_RULE_PROVIDERS` ထဲသို့ ထည့်ပါ — မဟုတ်ပါက `checkFallbackError` က rule သို့ structured `{code, type}` error ကိုသာ အမြဲလက်ဆင့်ကမ်းပေးပြီး body-text rule တစ်ခုက live traffic နှင့် ဘယ်တော့မျှ မကိုက်ညီတော့ပါ။ `status`/`headers` ပေါ်တွင်သာ သန့်စင်စွာကိုက်ညီသော rule များ (Opencode သို့မဟုတ် Minimax ၏ rule များကဲ့သို့) သည် ဤ opt-in ကို မလိုအပ်ပါ။ သီးခြားစီအနေဖြင့်၊ rule က `scope: "connection"` ကို ကြေညာထားပြီး ရည်ရွယ်ချက်မှာ အမှန်တကယ် connection-wide cooldown နှင့် same-request combo skip (သတင်းအချက်အလက်ပေးရုံသာ label တစ်ခု မဟုတ်ဘဲ) ဖြစ်ပါက provider id ကို တူညီသောဖိုင်ထဲရှိ `HONORS_RULE_LOCK_SCOPE_PROVIDERS` ထဲသို့ ထည့်ပါ — ၎င်းသည် `markAccountUnavailable()` (`src/sse/services/auth.ts`) နှင့် `applyComboTargetExhaustion()` (`open-sse/services/combo/targetExhaustion.ts`) အတွင်းရှိ `isAgentrouterConnectionQuotaScope()`-စတိုင်း consumption ကို gate လုပ်ပေးသောအရာ ဖြစ်သည်; ၎င်းမရှိလျှင် `scope` သည် `fallbackResult.ruleScope` မှတဆင့် ဆက်လက်စီးဆင်းနေဆဲဖြစ်သော်လည်း မည်သည့်အရာကမျှ ၎င်းအပေါ် အရေးမယူပါ။
-3. `tests/unit/upstream-status-restatement.test.ts` နှင့် `tests/unit/agentrouter-error-rules.test.ts` ကို ပုံတူရေးထားသော unit test များ ထည့်သွင်းပါ (not-permanent / not-creditsExhausted guard များ အပါအဝင်၊ ထို့အပြင် — provider က allowlist လိုအပ်ပါက — `resolveRuleMatchBody()` က full text ကို ၎င်း provider အတွက်သာ ပြန်ပေးကြောင်း ဖော်ညွှန်းသော test တစ်ခု အပါအဝင်)။
+1. `statusRestatementRegistry`
+   (`open-sse/config/upstreamStatusRestatement.ts`) ထဲတွင် rule array တစ်ခု မှတ်ပုံတင်ပါ။ `textMarkers`
+   များကို provider အလိုက်သီးသန့်ဖြစ်စေပါ။
+   `CREDITS_EXHAUSTED_SIGNALS` (`open-sse/services/accountFallback.ts`) နှင့်
+   တိုက်ဆိုင်နိုင်သော ယေဘုယျအင်္ဂလိပ်စာကြောင်းများကို ဘယ်တော့မှ ပြန်သုံးမထားပါစေနဲ့။
+2. မှန်ကန်သော lock scope (`connection` ကို account-wide quota အတွက်၊
+   per-model errors အတွက်ဆိုလျှင် `model`) ရွေးချယ်နိုင်ရန်
+   `open-sse/config/providerErrorRules.ts` (`providerRuleRegistry`) တွင်
+   classification rules များကို လိုအပ်လျှင် မှတ်ပုံတင်ပါ။ ဤအဆင့်သည်
+   error text အပြည့်အစုံ (body markers) လိုအပ်သော rules ရှိသော providers များအတွက်
+   production တွင်သာ အကျိုးသက်ရောက်ပါသည်။ ထို provider id ကို
+   အ identical ဖိုင်ရှိ `FULL_TEXT_RULE_PROVIDERS` ထဲသို့ ထည့်ပါ။
+   မဟုတ်လျှင် `checkFallbackError` က rule ဆီသို့ structured
+   `{code, type}` error ကိုသာ အမြဲတမ်းလက်ဆင့်ကမ်းပေးမည်ဖြစ်ပြီး
+   body-text rule တစ်ခုက live traffic ကို ဘယ်တော့မှ match မဖြစ်နိုင်ပါ။
+   `status`/`headers` ပေါ်တွင်သာမန်စွာစီမှန် match သော rules များ
+   (Opencode၏ သို့မဟုတ် Minimax၏ rules ကဲ့သို့) အတွက်ဤ opt-in မလိုအပ်ပါ။
+   ထို့အပြင်၊ rule က `scope: "connection"` ကို ကြေညာထားပြီး
+   ရည်ရွယ်ချက်က စစ်မှန်သော connection-wide cooldown နှင့်
+   same-request combo skip (အချက်အလက်ပုံသဏ္ဌာန်ခေါင်းစဉ်သာမဟုတ်ဘဲ) ဖြစ်လျှင်
+   provider id ကို အ identical ဖိုင်ရှိ `HONORS_RULE_LOCK_SCOPE_PROVIDERS`
+   ထဲသို့ ထည့်ပါ။ ၎င်းက `markAccountUnavailable()`
+   (`src/sse/services/auth.ts`) နှင့် `applyComboTargetExhaustion()`
+   (`open-sse/services/combo/targetExhaustion.ts`) ရှိ
+   `isAgentrouterConnectionQuotaScope()` ပုံစံအသုံးပြုမှုကို
+   ထိန်းချုပ်ပေးခြင်း ဖြစ်ပါသည်။ ၎င်းမပါလျှင် `scope` သည်
+   `fallbackResult.ruleScope` မှတစ်ဆင့် ဆက်လက်စီးဆင်းနေသော်လည်း
+   မည်သည့်အရာကမျှ ၎င်းပေါ်တွင် လုပ်ဆောင်မည်မဟုတ်ပါ။
+3. `tests/unit/upstream-status-restatement.test.ts` နှင့်
+   `tests/unit/agentrouter-error-rules.test.ts` ကို ပုံစံတူထားသော unit tests
+   များ ထည့်ပါ (not-permanent / not-creditsExhausted guards များအပါအဝင်၊
+   ထို့အပြင် provider က allowlist လိုအပ်လျှင် ထို provider အတွက်သာ
+   `resolveRuleMatchBody()` က full text ပြန်ပေးကြောင်း စစ်ဆေးသော test တစ်ခု)။
 
-`chatCore.ts`၊ `classifyError` သို့မဟုတ် combo တို့အတွက် ဘာမှပြောင်းလဲရန်မလိုအပ်ပါ။
+`chatCore.ts`၊ `classifyError` သို့မဟုတ် combo တို့အတွက် မည်သည့်ပြောင်းလဲမှုမျှ မလိုအပ်ပါ။
 
-#### Egress-bucket အလိုက် lock ချခြင်း (#10880)
+#### Egress-bucketed lock (#10880)
 
-`EGRESS_BUCKETED_LOCK_PROVIDERS` (opencode family) ထဲရှိ provider များကို IP-bucketed upstream အဖြစ် ဆက်ဆံထားသည် (opencode free tier သည် account-bucketed မဟုတ်ဘဲ IP-bucketed ဖြစ်သည် — #9611 ကို ကြည့်ပါ)- `quota_exhausted` **သို့မဟုတ်** `rate_limit_exceeded` အဖြစ် ခွဲခြားသတ်မှတ်ခံထားရသော status-429 တစ်ခုသည် rotation က ၎င်းတို့ကို မစမ်းသပ်နိုင်မီ နောက်ဆုံးသိရှိထားသော egress IP သည် ပျက်စီးသွားသော connection ၏ IP နှင့် ကိုက်ညီသော allowlist ထဲရှိ family connection တိုင်းကို cooldown ပေးသည် — အာမခံချက်ရှိစွာ ပျက်စီးစေမည့် upstream call N-1 ခုကို ရှောင်လွှဲပေးခြင်း (#10460/#10525 နှင့် ပုံစံတူသည်)။ `rate_limit_exceeded` ကို ရည်ရွယ်ချက်ရှိစွာ ထည့်သွင်းထားသည်- `markAccountUnavailable` လမ်းကြောင်းပေါ်တွင် opencode-specific rule များသည် ဘယ်တော့မျှ မကိုက်ညီပါ (headers/body ကို `checkFallbackError` သို့ ပေးပို့ခြင်းမရှိခြင်း၊ opencode သည် `FULL_TEXT_RULE_PROVIDERS` ထဲတွင်မရှိခြင်း တို့ကြောင့်)၊ ထို့ကြောင့် body ၌ subscription-quota text ("monthly usage limit reached") ပါရှိသော 429 တစ်ခုကို `status_429` rule သို့ မရောက်မီ quota-text fallback (`buildSubscriptionQuotaFallback`, `accountFallback.ts`; 1h cooldown) က `quota_exhausted` အဖြစ် ခွဲခြားသတ်မှတ်သည် — quota-text မပါဝင်သော 429 (သာမန် rate limiting) ကိုမူ `status_429` rule မှတဆင့် `rate_limit_exceeded` အဖြစ် ခွဲခြားသတ်မှတ်ကာ IP family ကို ဆက်လက် cooldown ပေးနေဆဲဖြစ်သည်။ Allowlist ထဲရှိ provider တစ်ခုအတွက် IP-bucketed rate limit သည် ကုန်ဆုံးသွားသော quota နှင့် တူညီသော signal ဖြစ်သည်။ ရိုးသားစွာ ဖော်ပြအပ်သော ကန့်သတ်ချက်များ-
+`EGRESS_BUCKETED_LOCK_PROVIDERS` (opencode မိသားစု) ထဲရှိ providers များကို
+IP-bucketed upstream အဖြစ်ဆောင်ရွက်ပါသည် (opencode free tier သည်
+account-bucketed မဟုတ်ဘဲ IP-bucketed ဖြစ်ပါသည် — #9611 ကို ကြည့်ပါ)။
+status-429 ဖြင့် classify လုပ်ထားသော `quota_exhausted` **သို့မဟုတ်**
+`rate_limit_exceeded` ဖြစ်လျှင်၊ rotation က ၎င်းတို့ကို စမ်းသပ်နိုင်မချင်း
+failing connection ၏ နောက်ဆုံးသိရှိထားသော egress IP နှင့် ကိုက်ညီသော
+allowlisted-family connection တိုင်းကို cooldown လုပ်ပါသည်
+— N-1 ကြုံတွေ့ရမှန်း သေချာနေသော ပျက်ကွက်မည့် upstream calls များကို ရှောင်ရှားရန်ဖြစ်ပါသည် (#10460/#10525 နှင့် ပုံသဏ္ဌာန်အတူတူပင်)။
+`rate_limit_exceeded` ကို ရည်ရွယ်ချက်ရှိရှိ ထည့်သွင်းထားခြင်းဖြစ်သည်။
+`markAccountUnavailable` လမ်းကြောင်းပေါ်တွင် opencode-specific rules များ
+ဘယ်တော့မှ match မဖြစ်နိုင်ပါ (`checkFallbackError` ဆီသို့ headers/body
+လက်ဆင့်ကမ်းမပေးခြင်း၊ opencode က `FULL_TEXT_RULE_PROVIDERS` ထဲတွင် မရှိခြင်း)။
+ထို့ကြောင့် subscription-quota စာသား ("monthly usage limit reached")
+ပါရှိသော body ရှိ 429 တစ်ခုကို `status_429` rule သို့ မရောက်မီ
+quota-text fallback (`buildSubscriptionQuotaFallback`၊ `accountFallback.ts`၊
+1h cooldown) က `quota_exhausted` အဖြစ် classify လုပ်ပါသည် — တစ်ဖက်တွင်
+quota-text မပါသော 429 (ပုံမှန် rate limiting) ကိုမူ
+`status_429` rule မှတစ်ဆင့် `rate_limit_exceeded` အဖြစ် classify လုပ်ပြီး
+IP မိသားစုကို ဆက်လက် cooldown လုပ်ပါသည်။ allowlisted provider တစ်ခုအတွက်
+IP-bucketed rate limit သည် ကုန်ဆုံးသွားသော quota နှင့်
+signal အတူတူပင်ဖြစ်ပါသည်။ ရိုးသားစွာဖော်ပြရသော ကန့်သတ်ချက်များ:
 
-- **အကောင်းဆုံးကြိုးပမ်းမှု (best-effort)**: lock သည် connection ၏
-  နောက်ဆုံးသိရှိထားသော `egress_ip` ကို `proxy_logs` မှ ဆုံးဖြတ်ရယူသည် (24
-  နာရီ window၊ synchronous၊ cache မသုံး)။ Cache အအေးအခြေအနေ (egress IP ကို
-  တစ်ကြိမ်မှ probe မလုပ်ရသေးခြင်း) သို့မဟုတ် row လုံးဝမရှိခြင်း → ပျက်စီးနေသော
-  connection ကို branch က ဆက်လက် cool လုပ်ပေးသည် (ယနေ့အတိုင်း မှတ်သားသည်)၊
-  sibling ကိုသာ lock မလုပ်ပါ။
-- **ဘယ်တော့မှ terminal မဖြစ်စေ**: cooldown သည် ပြန်လည်သက်တမ်းတိုးနေသော quota
-  window တစ်ခု ဖြစ်သည် (`testStatus: "unavailable"`); အမြဲတမ်းအခြေအနေကို
-  IP-level signal မှ ဘယ်တော့မှ ဆန်းစစ်ထုတ်ယူခြင်း မပြုပါ။ `disableCooling`
-  connection များသည် branch ကို လုံးဝကျော်သွားသည်။
-- **Allowlist ပါဝင်သော family အတွက် lock granularity ပြောင်းလဲခြင်း**: ဤအရာသည်
-  sibling optimization တစ်ခုသာမက scope ပြောင်းလဲမှုတစ်ခု ဖြစ်သည်။ opencode သည်
-  `passthroughModels` provider ဖြစ်သဖြင့် ဤbranch မရှိခင်က 429 တစ်ခုသည် per-MODEL
-  lockout ကို ဖြစ်စေသည်; ယခုအခါ၎င်းသည် connection cooldown ကို ဖြစ်စေသည် —
-  sibling လုံးဝမရှိသော connection တစ်ခုတည်းကို run နေသော operator အတွက်ပါ
-  အပါအဝင်။ ထိုအရာသည် opencode rule ဇယားက စစ်မှန်ကြောင်း ကြေညာထားပြီးသား
-  granularity ဖြစ်သည် (`scope: "connection"`၊ `providerErrorRules.ts`)၊ opencode
-  သည် `HONORS_RULE_LOCK_SCOPE_PROVIDERS` ထဲတွင် မပါဝင်သောကြောင့် ယခုအထိ
-  လေးစားလိုက်နာခြင်း မခံရသေးပါ။ Branch က ပျက်စီးနေသော connection ၏ cooldown +
-  `backoffLevel` ကို ကိုယ်တိုင်ရေးသားပြီး၊ connection-scoped agentrouter branch ကို
-  ပုံစံတူရိုက်ကူးလိုက်နာကာ return ပြန်သည် — per-model block နှင့် အောက်ဖော်ပြပါ
-  generic path သို့ ဘယ်တော့မှ မရောက်ရှိပါ။
-- **Combo ပါဝင်သည်**: agentrouter branch ကဲ့သို့၊ scope သည် combo caller တစ်ခုက
-  429 အပေါ် apply လုပ်သော `persistUnavailableState`/`isCombo` downgrade ကို
-  ရည်ရွယ်ချက်ရှိရှိ လျစ်လျူရှုသည်။ Per-model lockout သည် ဤscope ၏ ပိုအားနည်းသော
-  ပုံစံတစ်ခု မဟုတ်ပါ၊ ၎င်းသည် မှားယွင်းသော ယူနစ်ဖြစ်သည်: ၎င်းက ကုန်ဆုံးသွားသော
-  IP အကြောင်း ဘာမျှမပြောနိုင်သဖြင့် combo rotation သည် sibling တစ်ခုချင်းစီအတွက်
-  သေချာပေါက်ပျက်စီးမည့် call တစ်ခုကို ဆက်လက်ဖြုန်းတီးနေလိမ့်မည်။
-- **Sibling ဘေးလုံခြုံရေး**: terminal (banned/credits_exhausted) ဖြစ်နေပြီးသား
-  သို့မဟုတ် ပို၍ရှည်သော cooldown အတွင်းတွင် ရှိနေပြီးသော sibling ကို ဘယ်တော့မှ
-  overwrite မလုပ်ပါ။
+- **အကောင်းဆုံးကြိုးစားမှု (best-effort)**: lock သည် connection ၏ နောက်ဆုံးသိ
+  `egress_ip` ကို `proxy_logs` မှ ဆုံးဖြတ်ရှာဖွေသည် (24 နာရီ window၊
+  synchronous၊ cache မရှိ)။ Cold cache (egress IP ကို ဘယ်တော့မှ probe
+  မပြုလုပ်ရသေးခြင်း) သို့မဟုတ် row မရှိခြင်း → branch သည် ကျရှုံးသွားသော
+  connection ကို (ယနေ့အတိုင်း မှတ်သားပြီး) ဆက်လက် cool လုပ်ပါမည်၊ sibling ကိုသာ
+  lock မချတော့ပါ။
+- **ဘယ်တော့မှ terminal မဟုတ်ပါ**: cooldown သည် သစ်လုပ်ပြန်လည်နိုင်သော quota
+  window (`testStatus: "unavailable"`) ဖြစ်သည်; IP-level signal တစ်ခုမှ
+  အမြဲတမ်း state ကို ဘယ်တော့မှ ဆင်းသက်စေမည် မဟုတ်ပါ။ `disableCooling`
+  connection များသည် branch ကို လုံးဝ ကျော်သွားပါသည်။
+- **allowlist ပါဝင်သော family အတွက် lock granularity ပြောင်းလဲသွားသည်**:
+  ဤအရာသည် sibling optimization တစ်ခုတည်း မဟုတ်ဘဲ scope ပြောင်းလဲမှုတစ်ခု
+  ဖြစ်သည်။ opencode သည် `passthroughModels` provider ဖြစ်သောကြောင့်၊ ဤ
+  branch မရှိခင်က 429 တစ်ခုသည် per-MODEL lockout ကို ဖြစ်ပေါ်စေခဲ့သည်;
+  ယခုအခါ ၎င်းသည် connection cooldown ကို ဖြစ်ပေါ်စေသည် — sibling
+  လုံးဝမရှိဘဲ connection တစ်ခုတည်းကို run နေသော operator အတွက်ပါ ပါဝင်သည်။
+  ထို့သည်မှာ opencode rule ဇယားက ယခင်ကတည်းက မှန်ကန်ကြောင်း ကြေညာထားပြီးဖြစ်
+  သော granularity ဖြစ်သည် (`scope: "connection"`၊ `providerErrorRules.ts`)၊
+  opencode သည် `HONORS_RULE_LOCK_SCOPE_PROVIDERS` ထဲတွင် မပါဝင်သောကြောင့်
+  ယခုအထိ ဘယ်တော့မှ လေးစားလိုက်နာခြင်း မခံရပါ။ Branch သည် connection-scoped
+  agentrouter branch ကို ပုံတူပွားကာ ကျရှုံးသော connection ၏ cooldown +
+  `backoffLevel` ကို ကိုယ်တိုင်ရေးသားပြီး return ပြန်ပါသည် — per-model block
+  နှင့် အောက်ပါ generic path သို့ ဘယ်တော့မှ မရောက်ရှိပါ။
+- **Combo ပါဝင်သည်**: agentrouter branch ကဲ့သို့ပင်၊ scope သည် combo caller
+  တစ်ခုက 429 သို့ အသုံးချသော `persistUnavailableState`/`isCombo` downgrade
+  ကို ရည်ရွယ်ချက်ရှိရှိ လျစ်လျူရှုပါသည်။ Per-model lockout သည် ဤ scope ၏
+  ပို၍အားနည်းသောပုံစံ မဟုတ်ပါ၊ ၎င်းသည် မှားယွင်းသော unit ဖြစ်သည်: ၎င်းသည်
+  ကုန်ခမ်းသွားသော IP အကြောင်း ဘာမျှမပြောနိုင်သောကြောင့်၊ combo rotation သည်
+  sibling တစ်ခုချင်းစီအတွက် ကျရှုံးမည်မှာ သေချာနေသော call တစ်ခုကို ဆက်လက်
+  လောင်ကျွမ်းနေပါလိမ့်မည်။
+- **Sibling ဘေးလုံခြုံမှု**: terminal ဖြစ်နေပြီးသား sibling
+  (banned/credits_exhausted) သို့မဟုတ် ပို၍ရှည်လျားသော cooldown ထဲတွင်
+  ရှိနေပြီးသား sibling ကို ဘယ်တော့မှ ရေးလွှဲမည် မဟုတ်ပါ။
 - **သီးသန့် allowlist**: `EGRESS_BUCKETED_LOCK_PROVIDERS` ကို ချဲ့ထွင်ခြင်းသည်
-  ပိုင်ရှင်၏ ရှင်းလင်းသောဆုံးဖြတ်ချက်ဖြစ်သည်; generic wiring မပြုလုပ်ပါ
-  (pattern #10334/#10419)။ Sibling query သည် ထို allowlist တစ်ခုတည်းကို SQL
-  literal အဖြစ် ထပ်ခါထပ်ခါမရေးဘဲ bind လုပ်သောကြောင့် ၎င်းကို ချဲ့ထွင်ခြင်းသည်
-  တစ်ကြောင်းတည်းပြောင်းလဲမှုအဖြစ် ဆက်လက်ရှိနေသည်။
-- **Egress IP rotation၊ နှစ်လမ်းလုံး**: ရှာဖွေရေး window (24 နာရီ) သည် egress-IP
-  cache TTL (5 မိနစ်) ထက် များစွာကျယ်သောကြောင့် "နောက်ဆုံးသိရ IP" သည် လက်ရှိ
-  အခြေအနေမဟုတ်ဘဲ မှတ်တမ်းဖြစ်သည်။ Connection ၏ proxy သည် window အတွင်း
-  rotate ဖြစ်သွားခဲ့ပါက lock သည် တကယ့်မျှဝေအသုံးပြုနေသော IP တစ်ခုကို
-  **လွဲချွား**နိုင်သည် (မှတ်သားထားသော IP သည် ကုန်ဆုံးခြင်းမရှိသေးသော IP အသစ်
-  ဖြစ်နေသည်) — ထို့အတူပင်စွာ ၎င်းက ကုန်ဆုံးသွားသော IP မှ **rotate ဖြစ်သွား
-  ပြီဖြစ်သော sibling ကို cool လုပ်မိနိုင်**သည်။ ဒုတိယအခြေအနေသည် ထို sibling အတွက်
-  cooldown window တစ်ခု ဆုံးရှုံးစေသည်; နှစ်ခုလုံးသည် history-based ရှာဖွေမှု၏
-  လက်ခံပြီးသား best-effort ကန့်သတ်ချက်များ ဖြစ်သည်။
-- **ကုန်ကျစရိတ်**: `proxy_logs` ၏ ကန့်သတ်ထားသော scan နှစ်ခု
-  (`idx_pl_timestamp` မှတစ်ဆင့် window-filter လုပ်ထား)၊ 429 frequency တွင်သာ။
-  Index အသစ်မလို (migration 134 YAGNI)။ အလတ်စားအရွယ်အစား real-traffic DB
-  မိတ္တူတစ်ခုပေါ်တွင် တိုင်းထာပြီးဖြစ်သည်; high-throughput instance တစ်ခုသည်
-  တူညီသော window အတွင်းတွင် အချိုးအစားအားဖြင့် ပိုများသော row များကို
-  ကိုင်ဆောင်ထားသည်။
+  ရှင်းလင်းသော ပိုင်ရှင်ဆုံးဖြတ်ချက်တစ်ခု ဖြစ်သည်; generic wiring မရှိပါ
+  (pattern #10334/#10419)။ Sibling query သည် ၎င်းကို SQL literal အဖြစ်
+  ထပ်ခါတလဲလဲဖော်ပြခြင်းမပြုဘဲ ထို allowlist တူးတစ်ခုချင်းကို bind
+  လုပ်ထားသောကြောင့်၊ ၎င်းကို ချဲ့ထွင်ခြင်းသည် တစ်ကြောင်းတည်း ပြောင်းလဲမှု
+  အဖြစ် ဆက်လက်ရှိနေပါမည်။
+- **Egress IP rotation၊ နှစ်လမ်းလုံး**: lookup window (24 နာရီ) သည် egress-IP
+  cache TTL (5 မိနစ်) ထက် အလွန်ကျယ်ဝန်းသောကြောင့်၊ "နောက်ဆုံးသိ IP" သည်
+  လက်ရှိ state မဟုတ်ဘဲ history ဖြစ်သည်။ Connection ၏ proxy သည် window
+  အတွင်းတွင် rotate ဖြစ်သွားခဲ့ပါက lock သည် အမှန်တကယ် မျှဝေသုံးစွဲနေသော IP
+  ကို **လွဲမှား**နိုင်ပါသည် (မှတ်သားထားသော IP သည် အသစ်ဖြစ်ပြီး မကုန်ခမ်း
+  ရသေးသော IP ဖြစ်နေသည်) — နှင့် ဆင်တူစွာပင် ၎င်းသည် ကုန်ခမ်းသွားသော IP မှ
+  ထိုအချိန်ကတည်းက rotate ဖြစ်ကာ ထွက်သွားပြီဖြစ်သော sibling တစ်ခုကို **cool
+  လုပ်မိနိုင်ပါသည်**။ ဒုတိယအခြေအနေက ထို sibling ကို cooldown window တစ်ခု
+  ကုန်ကျစေပါသည်; နှစ်ခုလုံးမှာ history-based lookup ၏ လက်ခံထားပြီးဖြစ်သော
+  best-effort ကန့်သတ်ချက်များ ဖြစ်ပါသည်။
+- **ကုန်ကျစရိတ်**: `proxy_logs` ၏ ကန့်သတ်ထားသော scan နှစ်ခု (`idx_pl_timestamp`
+  မှတဆင့် window-filtered)၊ 429 frequency တွင်သာ။ Index အသစ် မရှိပါ
+  (migration 134 YAGNI)။ အလယ်အလတ်အရွယ်အစား ရှိသော real-traffic DB
+  မိတ္တူတစ်ခုပေါ်တွင် တိုင်းထားထားသည်; high-throughput instance တစ်ခုသည်
+  window တူအတွင်းတွင် rows များကို ပမာဏအချိုးကျ ပို၍များစွာ ကိုင်ထားပါမည်။
 
 ---
 
